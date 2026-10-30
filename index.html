@@ -1,702 +1,234 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full select-none">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Codespace Python IDE 3.14</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Font Awesome Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Google Fonts: Inter & JetBrains Mono -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
-    <!-- Pyodide CDN for WASM Python 3.14 -->
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
-    <!-- Monaco Editor Loader -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Python IDE — client-side Pyodide playground</title>
+  <meta name="description" content="A fully static Python IDE. Monaco editor, a real CPython runtime in WebAssembly, and turtle / tkinter / pygame previews. No server, no build step.">
 
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        mono: ['JetBrains Mono', 'monospace'],
-                    },
-                    colors: {
-                        cs: {
-                            bg: '#000000',
-                            sidebar: '#0f0f0f',
-                            activity: '#000000',
-                            border: '#6fc3df',
-                            activeTab: '#000000',
-                            inactiveTab: '#0f0f0f',
-                            terminal: '#000000',
-                            accent: '#f38518',
-                            text: '#ffffff',
-                            muted: '#a6a6a6'
-                        }
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #000000; }
-        ::-webkit-scrollbar-thumb { background: #6fc3df; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #ffff00; }
-        .monaco-editor, .monaco-editor .margin {
-            background-color: #000000 !important;
-        }
-    </style>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐍</text></svg>">
+
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+
+  <!-- Monaco's AMD loader (classic script: must run before app.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+  <script type="module" src="assets/app.js"></script>
 </head>
-<body class="bg-black text-white font-sans h-full flex flex-col overflow-hidden">
+<body>
 
-    <!-- TOP NAV / CODESPACES HEADER -->
-    <header class="bg-black border-b border-[#6fc3df] h-10 px-3 flex items-center justify-between shrink-0 font-mono text-xs">
-        <div class="flex items-center space-x-3">
-            <i class="fa-brands fa-github text-white text-lg"></i>
-            <span class="font-semibold text-white flex items-center gap-2">
-                codespace <span class="bg-[#f38518]/20 text-[#f38518] px-1.5 py-0.5 rounded text-[10px] border border-[#f38518]/50">python-3.14</span>
-            </span>
-            <span id="pyodide-status" class="flex items-center gap-1.5 text-yellow-300 text-[11px] ml-4">
-                <span class="w-2 h-2 rounded-full bg-yellow-300 animate-pulse"></span> Initializing Python 3.14 WASM...
-            </span>
+  <!-- ── Icon sprite ───────────────────────────────────────────────── -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l11-6.86a1 1 0 0 0 0-1.7l-11-6.86A1 1 0 0 0 8 5.14z"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 2h8l6 6v14H6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2v6h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 4h4M6 7l1 13h10l1-13M10 11v5M14 11v5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4L20 8l-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 21h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m7 9 3 3-3 3M12.5 15H17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-canvas" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m5 15 4-5 3 3 3-4 4 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="8.5" cy="8" r="1.4"/></symbol>
+    <symbol id="i-window" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 4v16" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+    <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m4 16 8-8 6 6-5 5H7l-3-3zM10 20h10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-close-panel" viewBox="0 0 24 24"><path d="M4 6h16M4 18h16M9 12l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </svg>
+
+  <div class="app" id="app">
+
+    <!-- ── Top bar ─────────────────────────────────────────────────── -->
+    <header class="topbar">
+      <button class="icon-btn" id="btn-sidebar" title="Toggle file panel (Ctrl+B)" aria-label="Toggle file panel">
+        <svg class="icon"><use href="#i-sidebar"/></svg>
+      </button>
+
+      <a class="brand" href="./" aria-label="Python IDE home">
+        <span class="brand-mark">py</span>
+        <span class="brand-text">
+          <strong>Python IDE</strong>
+          <small>client-side · pyodide</small>
+        </span>
+      </a>
+
+      <button class="btn ghost icon-only" id="btn-settings" title="Settings (Ctrl+,)" aria-label="Settings">
+        <svg class="icon"><use href="#i-settings"/></svg>
+      </button>
+
+      <div class="runtime" id="runtime" data-state="loading" title="Python runtime status">
+        <span class="runtime-dot"></span>
+        <span id="runtime-text">Starting runtime…</span>
+      </div>
+
+      <div class="topbar-spacer"></div>
+
+      <button class="btn ghost icon-only" id="btn-restart" title="Restart the Python runtime" aria-label="Restart runtime">
+        <svg class="icon"><use href="#i-refresh"/></svg>
+      </button>
+
+      <div class="menu-wrap">
+        <div class="split">
+          <button class="btn primary" id="btn-run" disabled>
+            <svg class="icon"><use href="#i-play"/></svg>
+            <span>Run</span>
+            <kbd class="kbd-inline">Ctrl ↵</kbd>
+          </button>
+          <button class="btn primary caret" id="btn-run-menu" aria-label="More run options" aria-haspopup="menu" aria-expanded="false" disabled>
+            <svg class="icon"><use href="#i-chevron"/></svg>
+          </button>
         </div>
-
-        <div class="flex items-center space-x-2">
-            <select id="template-select" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" class="bg-black border border-[#6fc3df] text-white text-xs rounded px-2 py-1 focus:outline-none focus:border-[#ffff00] cursor-pointer">
-                <option value="" disabled selected>📁 Load Starter Project</option>
-                <option value="turtle">🐢 Turtle Graphics Art</option>
-                <option value="pygame">🎮 Pygame Game Canvas</option>
-                <option value="tkinter">🎨 Tkinter GUI App</option>
-                <option value="os_demo">🖥️ Virtual Shell & File OS</option>
-            </select>
-
-            <button id="run-btn" disabled class="bg-[#00ff00] hover:bg-[#00cc00] disabled:bg-gray-800 disabled:text-gray-500 text-black font-bold px-3 py-1 rounded text-xs transition flex items-center gap-1.5">
-                <i class="fa-solid fa-play" id="run-icon"></i>
-                <span id="run-text">Run</span>
-            </button>
-            
-            <button id="download-btn" class="bg-black hover:bg-gray-900 border border-[#6fc3df] text-white px-2.5 py-1 rounded text-xs transition flex items-center gap-1" title="Download current file">
-                <i class="fa-solid fa-download"></i>
-            </button>
+        <div class="menu" id="run-menu" role="menu" hidden>
+          <button role="menuitem" data-run="active"><span>Run active file</span><kbd>Ctrl ↵</kbd></button>
+          <button role="menuitem" data-run="input"><span>Run with input…</span><kbd>Ctrl ⇧ ↵</kbd></button>
         </div>
+      </div>
+
+      <button class="btn danger" id="btn-stop" disabled>
+        <svg class="icon"><use href="#i-stop"/></svg>
+        <span>Stop</span>
+      </button>
     </header>
 
-    <!-- MAIN CODESPACES BODY -->
-    <div class="flex-1 flex overflow-hidden">
+    <!-- ── Workspace ───────────────────────────────────────────────── -->
+    <div class="workspace">
 
-        <!-- ACTIVITY BAR (FAR LEFT) -->
-        <div class="w-12 bg-black border-r border-[#6fc3df] flex flex-col items-center py-3 space-y-5 text-white text-lg shrink-0">
-            <button class="text-[#ffff00] hover:text-white transition" title="Explorer"><i class="fa-regular fa-copy"></i></button>
-            <button class="hover:text-[#ffff00] transition" title="Terminal"><i class="fa-solid fa-terminal"></i></button>
-            <button class="hover:text-[#ffff00] transition" title="Settings"><i class="fa-solid fa-gear"></i></button>
+      <aside class="sidebar" id="sidebar" aria-label="Files">
+        <div class="sidebar-head">
+          <span>Explorer</span>
+          <div class="menu-wrap">
+            <button class="icon-btn small" id="btn-new" title="New file" aria-label="New file" aria-haspopup="menu" aria-expanded="false">
+              <svg class="icon"><use href="#i-plus"/></svg>
+            </button>
+            <div class="menu" id="new-menu" role="menu" hidden>
+              <button role="menuitem" data-template="blank"><span>Blank file</span><kbd>py</kbd></button>
+               <button role="menuitem" data-template="javascript"><span>JavaScript file</span><kbd>js</kbd></button>
+               <button role="menuitem" data-template="html"><span>HTML page</span><kbd>html</kbd></button>
+              <button role="menuitem" data-template="turtle"><span>Turtle art</span></button>
+              <button role="menuitem" data-template="tkinter"><span>Tkinter app</span></button>
+              <button role="menuitem" data-template="pygame"><span>Pygame canvas</span></button>
+              <button role="menuitem" data-template="files"><span>Files &amp; OS demo</span></button>
+            </div>
+          </div>
         </div>
 
-        <!-- SIDEBAR: FILE EXPLORER -->
-        <div class="w-56 bg-[#0f0f0f] border-r border-[#6fc3df] flex flex-col shrink-0">
-            <div class="p-2.5 border-b border-[#6fc3df] text-[11px] font-bold text-[#ffff00] uppercase tracking-wider flex justify-between items-center">
-                <span>Explorer</span>
-                <div class="space-x-2">
-                    <button id="new-file-btn" class="hover:text-[#00ff00] transition" title="New File"><i class="fa-solid fa-file-circle-plus"></i></button>
-                    <button id="refresh-tree-btn" class="hover:text-[#00ff00] transition" title="Refresh Tree"><i class="fa-solid fa-arrows-rotate"></i></button>
-                </div>
-            </div>
-            
-            <!-- Virtual Filesystem Tree -->
-            <div class="flex-1 p-2 overflow-y-auto text-xs font-mono space-y-1" id="file-tree">
-                <div class="text-gray-400 italic text-[11px]">Loading file structure...</div>
-            </div>
+        <ul class="file-list" id="file-list" role="listbox" aria-label="Workspace files"></ul>
+
+        <div class="sidebar-foot">
+          <button class="btn ghost small" id="btn-import">
+            <svg class="icon"><use href="#i-upload"/></svg> Import
+          </button>
+          <button class="btn ghost small" id="btn-export" title="Download the active file">
+            <svg class="icon"><use href="#i-download"/></svg> Export
+          </button>
+          <input type="file" id="file-input" accept=".py,.txt,.md,.json,.csv,.html,.js,.css" multiple hidden>
         </div>
+      </aside>
 
-        <!-- WORKSPACE: EDITOR & BOTTOM PANEL -->
-        <div class="flex-1 flex flex-col overflow-hidden">
+      <div class="sidebar-scrim" id="sidebar-scrim" hidden></div>
 
-            <!-- MONACO CODE EDITOR SECTION -->
-            <div class="flex-1 flex flex-col bg-black border-b border-[#6fc3df] min-h-[40%]">
-                <!-- Tabs Bar -->
-                <div id="tabs-bar" class="bg-[#0f0f0f] border-b border-[#6fc3df] flex items-center overflow-x-auto text-xs font-mono">
-                    <!-- Dynamic tabs rendered by JS -->
-                </div>
-
-                <!-- Monaco Editor Container -->
-                <div id="monaco-container" class="flex-1 w-full h-full"></div>
-            </div>
-
-            <!-- BOTTOM TABBED PANEL (TERMINAL, GRAPHICS, GUI) -->
-            <div class="h-64 flex flex-col bg-black shrink-0">
-                <!-- Bottom Panel Header Tabs -->
-                <div class="bg-[#0f0f0f] border-b border-[#6fc3df] px-3 flex items-center justify-between text-xs">
-                    <div class="flex space-x-4">
-                        <button id="tab-btn-terminal" onclick="switchBottomTab('terminal')" class="py-2 font-bold text-[#ffff00] border-b-2 border-[#ffff00] flex items-center gap-1.5">
-                            <i class="fa-solid fa-terminal text-[#00ff00]"></i> Terminal
-                        </button>
-                        <button id="tab-btn-canvas" onclick="switchBottomTab('canvas')" class="py-2 font-medium text-gray-400 hover:text-white border-b-2 border-transparent flex items-center gap-1.5">
-                            <i class="fa-solid fa-palette text-[#00ffff]"></i> Turtle / Pygame Canvas
-                        </button>
-                        <button id="tab-btn-gui" onclick="switchBottomTab('gui')" class="py-2 font-medium text-gray-400 hover:text-white border-b-2 border-transparent flex items-center gap-1.5">
-                            <i class="fa-solid fa-window-maximize text-[#f38518]"></i> GUI Preview (Tkinter)
-                        </button>
-                    </div>
-                    <button id="clear-terminal-btn" class="text-gray-400 hover:text-[#00ff00] text-xs transition" title="Clear terminal">
-                        <i class="fa-solid fa-trash-can"></i> Clear
-                    </button>
-                </div>
-
-                <!-- Tab Contents -->
-                <div class="flex-1 overflow-hidden relative">
-                    
-                    <!-- TERMINAL CONTENT -->
-                    <div id="panel-terminal" class="h-full flex flex-col p-3 font-mono text-xs overflow-y-auto select-text bg-black">
-                        <div id="terminal-output" class="space-y-1 mb-2">
-                            <div class="text-gray-400">GitHub Codespaces Python Terminal [Version 3.14 WASM - Render Ready]</div>
-                            <div class="text-gray-400">Supported Modules: <span class="text-[#00ff00]">turtle, pygame, tkinter, os, sys, random, math, json, sqlite3, numpy</span></div>
-                            <div class="text-gray-400">Type <span class="text-[#ffff00]">help</span> for commands or click <span class="text-[#00ff00]">Run</span> above.</div>
-                        </div>
-
-                        <!-- Shell Command Input -->
-                        <div class="flex items-center space-x-2 text-xs">
-                            <span class="text-[#00ff00] font-bold shrink-0">python@codespace:~$</span>
-                            <input type="text" id="terminal-shell-input" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" class="flex-1 bg-transparent text-white font-mono outline-none border-none p-0" placeholder="Type command (e.g. python main.py, ls, help)...">
-                        </div>
-                    </div>
-
-                    <!-- TURTLE / PYGAME CANVAS CONTENT -->
-                    <div id="panel-canvas" class="h-full hidden p-2 bg-black overflow-hidden flex flex-col items-center justify-center border-t border-[#6fc3df]">
-                        <canvas id="canvas" width="500" height="200" class="bg-black border border-[#6fc3df] max-w-full max-h-full"></canvas>
-                    </div>
-
-                    <!-- TKINTER GUI CANVAS CONTENT -->
-                    <div id="panel-gui" class="h-full hidden p-4 bg-black overflow-auto flex items-center justify-center border-t border-[#6fc3df]">
-                        <div id="tkinter-canvas" class="bg-white text-black rounded-none p-4 min-w-[300px] min-h-[180px] border-2 border-[#6fc3df] font-sans">
-                            <div class="text-gray-600 italic text-xs text-center py-8">Tkinter GUI widgets will render here when executed...</div>
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-
+      <main class="editor-pane">
+        <div class="tabs" id="tabs" role="tablist" aria-label="Open files"></div>
+        <div class="editor-wrap">
+          <div class="editor" id="editor"></div>
+          <div class="empty-state" id="empty-state" hidden>
+            <svg class="icon"><use href="#i-file"/></svg>
+            <p>No file open</p>
+            <button class="btn ghost small" id="btn-empty-new">Create a file</button>
+          </div>
+          <div class="editor-loading" id="editor-loading">Loading editor…</div>
         </div>
+      </main>
     </div>
 
-    <!-- STATUS BAR -->
-    <footer class="bg-black border-t border-[#6fc3df] px-3 py-1 text-[11px] text-white flex items-center justify-between font-mono shrink-0">
-        <div class="flex items-center space-x-4">
-            <span class="text-[#ffff00]"><i class="fa-solid fa-code-branch mr-1"></i> main</span>
-            <span class="text-[#00ff00]"><i class="fa-solid fa-circle-check mr-1"></i> Monaco High Contrast + Python 3.14 WASM</span>
+    <!-- ── Bottom panel ────────────────────────────────────────────── -->
+    <div class="resizer" id="resizer" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="Resize output panel"></div>
+
+    <section class="console" id="console" aria-label="Output">
+      <div class="console-head">
+        <div class="console-tabs" role="tablist" aria-label="Output views">
+          <button class="console-tab is-active" data-panel="terminal" role="tab" aria-selected="true">
+            <svg class="icon"><use href="#i-terminal"/></svg> Terminal
+          </button>
+          <button class="console-tab" data-panel="canvas" role="tab" aria-selected="false">
+            <svg class="icon"><use href="#i-canvas"/></svg> Canvas
+            <span class="badge" id="badge-canvas" hidden></span>
+          </button>
+          <button class="console-tab" data-panel="window" role="tab" aria-selected="false">
+            <svg class="icon"><use href="#i-window"/></svg> Window
+            <span class="badge" id="badge-window" hidden></span>
+          </button>
         </div>
-        <div>
-            <span>UTF-8 &nbsp;|&nbsp; Pyodide WASM Engine</span>
+        <div class="console-actions">
+          <button class="icon-btn small" id="btn-clear" title="Clear terminal" aria-label="Clear terminal">
+            <svg class="icon"><use href="#i-eraser"/></svg>
+          </button>
+          <button class="icon-btn small" id="btn-hide-console" title="Hide panel (Ctrl+`)" aria-label="Hide panel">
+            <svg class="icon"><use href="#i-close-panel"/></svg>
+          </button>
         </div>
+      </div>
+
+      <div class="console-body">
+        <div class="panel panel-terminal is-active" id="panel-terminal" role="tabpanel">
+          <div class="terminal" id="terminal" tabindex="0" aria-live="polite" aria-label="Terminal output"></div>
+          <form class="prompt" id="prompt-form" autocomplete="off">
+            <span class="prompt-path" id="prompt-path">~</span>
+            <span class="prompt-sigil" id="prompt-sigil">$</span>
+            <input class="prompt-input" id="prompt-input" spellcheck="false" autocapitalize="off"
+                   autocorrect="off" placeholder="Type a command — try “help”" aria-label="Terminal command">
+          </form>
+        </div>
+
+        <div class="panel panel-canvas" id="panel-canvas" role="tabpanel" hidden>
+          <div class="canvas-stage">
+            <canvas id="canvas" width="720" height="480" aria-label="Graphics output"></canvas>
+          </div>
+          <div class="panel-hint">Drawing output from <code>turtle</code> and <code>pygame</code></div>
+        </div>
+
+        <div class="panel panel-window" id="panel-window" role="tabpanel" hidden>
+          <div class="tk-stage" id="tk-stage"></div>
+          <div class="tk-empty" id="tk-empty">Run a <code>tkinter</code> script to see its window here.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Status bar ──────────────────────────────────────────────── -->
+    <footer class="statusbar">
+      <span class="status-item"><svg class="icon"><use href="#i-bolt"/></svg> <span id="status-branch">main</span></span>
+      <span class="status-item" id="status-runtime">Python 3.14 · WebAssembly</span>
+      <span class="status-spacer"></span>
+      <span class="status-item" id="status-cursor">Ln 1, Col 1</span>
+      <span class="status-item"><select id="status-language" class="status-select" aria-label="Language"></select></span>
+      <span class="status-item" id="status-indent">Spaces: 4</span>
+      <span class="status-item">UTF-8</span>
     </footer>
-
-    <!-- INTERACTIVE ENGINE LOGIC -->
-    <script>
-        let pyodide = null;
-        let monacoEditor = null;
-
-        let files = {
-            'main.py': `# Turtle Graphics Demo in Python 3.14
-import turtle
-
-t = turtle.Turtle()
-t.speed(0)
-t.color("yellow")
-
-for i in range(36):
-    t.forward(80)
-    t.right(100)
-
-print("✨ Turtle Art Rendered on Canvas!")
-`
-        };
-
-        let activeFile = 'main.py';
-
-        const terminalOutput = document.getElementById('terminal-output');
-        const terminalInput = document.getElementById('terminal-shell-input');
-        const fileTree = document.getElementById('file-tree');
-        const tabsBar = document.getElementById('tabs-bar');
-        const pyodideStatus = document.getElementById('pyodide-status');
-        const runBtn = document.getElementById('run-btn');
-        const runText = document.getElementById('run-text');
-
-        // Initialize Monaco Editor
-        function initMonaco() {
-            require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' } });
-            require(['vs/editor/editor.main'], function () {
-                
-                // Register Custom Python Autocomplete Provider
-                monaco.languages.registerCompletionItemProvider('python', {
-                    provideCompletionItems: function (model, position) {
-                        const suggestions = [
-                            // Python Keywords
-                            ...['def', 'class', 'import', 'from', 'return', 'if', 'elif', 'else', 'for', 'while', 'try', 'except', 'finally', 'with', 'as', 'lambda', 'async', 'await', 'global', 'raise', 'pass'].map(k => ({
-                                label: k,
-                                kind: monaco.languages.CompletionItemKind.Keyword,
-                                insertText: k,
-                                detail: 'Python Keyword'
-                            })),
-                            // Built-in Modules
-                            ...['turtle', 'pygame', 'os', 'sys', 'random', 'time', 'json', 'math', 'tkinter', 'sqlite3', 'numpy'].map(m => ({
-                                label: m,
-                                kind: monaco.languages.CompletionItemKind.Module,
-                                insertText: m,
-                                detail: 'Standard Library / WASM Module'
-                            })),
-                            // Turtle Snippet
-                            {
-                                label: 'turtle_template',
-                                kind: monaco.languages.CompletionItemKind.Snippet,
-                                insertText: [
-                                    'import turtle',
-                                    't = turtle.Turtle()',
-                                    't.color("cyan")',
-                                    'for i in range(4):',
-                                    '    t.forward(100)',
-                                    '    t.right(90)'
-                                ].join('\n'),
-                                insertTextRules: monaco.languages.CompletionItemInsertValueRule.InsertAsSnippet,
-                                detail: 'Turtle Graphics Boilerplate'
-                            }
-                        ];
-                        return { suggestions: suggestions };
-                    }
-                });
-
-                // Create Monaco Instance with VS High Contrast Dark Theme
-                monacoEditor = monaco.editor.create(document.getElementById('monaco-container'), {
-                    value: files[activeFile],
-                    language: 'python',
-                    theme: 'hc-black',
-                    automaticLayout: true,
-                    fontFamily: 'JetBrains Mono',
-                    fontSize: 13,
-                    minimap: { enabled: true },
-                    cursorBlinking: 'smooth',
-                    scrollBeyondLastLine: false,
-                    tabSize: 4,
-                    insertSpaces: true,
-                    quickSuggestions: false,
-                    acceptSuggestionOnEnter: "off"
-                });
-
-                // Sync Editor Changes Back to File Store
-                monacoEditor.onDidChangeModelContent(() => {
-                    files[activeFile] = monacoEditor.getValue();
-                });
-            });
-        }
-
-        // Tabs Rendering
-        function renderTabs() {
-            tabsBar.innerHTML = '';
-            Object.keys(files).forEach(filename => {
-                const isActive = filename === activeFile;
-                const tab = document.createElement('div');
-                tab.className = `px-3 py-2 border-r border-[#6fc3df] flex items-center space-x-2 cursor-pointer ${isActive ? 'bg-black text-[#ffff00] font-bold border-t-2 border-t-[#ffff00]' : 'bg-[#0f0f0f] text-gray-400 hover:text-white'}`;
-                tab.innerHTML = `
-                    <i class="fa-regular fa-file-code text-[#6fc3df]"></i>
-                    <span>${filename}</span>
-                    ${Object.keys(files).length > 1 ? `<i class="fa-solid fa-xmark hover:text-red-400 ml-2" onclick="closeFile('${filename}', event)"></i>` : ''}
-                `;
-                tab.onclick = () => switchFile(filename);
-                tabsBar.appendChild(tab);
-            });
-        }
-
-        function switchFile(filename) {
-            activeFile = filename;
-            if (monacoEditor) {
-                monacoEditor.setValue(files[filename]);
-            }
-            renderTabs();
-            renderFileTree();
-        }
-
-        function closeFile(filename, event) {
-            event.stopPropagation();
-            delete files[filename];
-            const remaining = Object.keys(files);
-            activeFile = remaining[0];
-            switchFile(activeFile);
-        }
-
-        // Render File Tree
-        function renderFileTree() {
-            fileTree.innerHTML = '';
-
-            if (pyodide) {
-                try {
-                    const pyFiles = pyodide.FS.readdir('/home/pyodide/project');
-                    pyFiles.forEach(f => {
-                        if (f !== '.' && f !== '..' && !files[f]) {
-                            try {
-                                const content = pyodide.FS.readFile(`/home/pyodide/project/${f}`, { encoding: 'utf8' });
-                                files[f] = content;
-                            } catch (e) {}
-                        }
-                    });
-                } catch (e) {}
-            }
-
-            Object.keys(files).forEach(f => {
-                const item = document.createElement('div');
-                item.className = `p-1 px-2 rounded hover:bg-[#6fc3df]/30 cursor-pointer flex items-center space-x-2 ${f === activeFile ? 'text-[#ffff00] bg-[#6fc3df]/20 font-bold border-l-2 border-[#ffff00]' : 'text-gray-300'}`;
-                item.innerHTML = `<i class="fa-regular fa-file-code text-[#6fc3df]"></i> <span>${f}</span>`;
-                item.onclick = () => switchFile(f);
-                fileTree.appendChild(item);
-            });
-        }
-
-        // Terminal Output Utility
-        function appendTerminal(text, type = 'output') {
-            const line = document.createElement('div');
-            if (type === 'error') line.className = 'text-red-400 font-bold';
-            else if (type === 'system') line.className = 'text-yellow-300 italic';
-            else if (type === 'cmd') line.className = 'text-[#00ff00] font-bold';
-            else line.className = 'text-white';
-
-            line.textContent = text;
-            terminalOutput.appendChild(line);
-            terminalOutput.parentElement.scrollTop = terminalOutput.parentElement.scrollHeight;
-        }
-
-        // Initialize Pyodide with Turtle, Pygame, and Tkinter Shims
-        async function initPyodide() {
-            try {
-                pyodide = await loadPyodide({
-                    stdout: (text) => appendTerminal(text, 'output'),
-                    stderr: (text) => appendTerminal(text, 'error')
-                });
-
-                try { pyodide.FS.mkdir('/home/pyodide/project'); } catch(e) {}
-                pyodide.FS.chdir('/home/pyodide/project');
-
-                // Inject Custom Turtle, Pygame & Tkinter Shims
-                pyodide.runPython(`
-import sys, math
-
-# TURTLE SHIM
-class DummyTurtle:
-    def __init__(self):
-        self.x, self.y = 250, 100
-        self.angle = 0
-        self._color = "yellow"
-        self._speed = 1
-        self.reset_canvas()
-
-    def reset_canvas(self):
-        import js
-        canvas = js.document.getElementById('canvas')
-        ctx = canvas.getContext('2d')
-        ctx.fillStyle = "black"
-        ctx.fillRect(0, 0, 500, 200)
-
-    def color(self, c): self._color = c
-    def speed(self, s): self._speed = s
-    def forward(self, dist):
-        import js
-        rad = math.radians(self.angle)
-        nx = self.x + dist * math.cos(rad)
-        ny = self.y + dist * math.sin(rad)
-        canvas = js.document.getElementById('canvas')
-        ctx = canvas.getContext('2d')
-        ctx.strokeStyle = self._color
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.moveTo(self.x, self.y)
-        ctx.lineTo(nx, ny)
-        ctx.stroke()
-        self.x, self.y = nx, ny
-    def right(self, deg): self.angle = (self.angle + deg) % 360
-    def left(self, deg): self.angle = (self.angle - deg) % 360
-
-import types
-turtle_mod = types.ModuleType('turtle')
-turtle_mod.Turtle = DummyTurtle
-sys.modules['turtle'] = turtle_mod
-
-# TKINTER SHIM
-class DummyTk:
-    def __init__(self):
-        import js
-        js.document.getElementById('tkinter-canvas').innerHTML = '<div id="tk-root" class="flex flex-col gap-2 p-2"></div>'
-    def title(self, t): pass
-    def mainloop(self): pass
-
-class DummyWidget:
-    def __init__(self, parent, text="", command=None):
-        self.text = text
-        self.command = command
-        self.element_id = f"tk-elem-{id(self)}"
-    def pack(self): 
-        import js
-        root = js.document.getElementById('tk-root')
-        if root:
-            el = js.document.createElement('div')
-            el.id = self.element_id
-            el.className = "p-1 font-sans text-xs font-semibold text-black"
-            el.innerText = self.text
-            root.appendChild(el)
-    def config(self, text=""):
-        self.text = text
-        import js
-        el = js.document.getElementById(self.element_id)
-        if el: el.innerText = text
-
-class DummyButton(DummyWidget):
-    def pack(self):
-        import js
-        root = js.document.getElementById('tk-root')
-        if root:
-            btn = js.document.createElement('button')
-            btn.className = "px-3 py-1 bg-black text-white hover:bg-gray-800 font-bold rounded-none border border-[#6fc3df] text-xs transition my-1"
-            btn.innerText = self.text
-            if self.command: btn.onclick = lambda e: self.command()
-            root.appendChild(btn)
-
-class DummyEntry(DummyWidget):
-    def pack(self):
-        import js
-        root = js.document.getElementById('tk-root')
-        if root:
-            inp = js.document.createElement('input')
-            inp.setAttribute('autocapitalize', 'off')
-            inp.setAttribute('autocomplete', 'off')
-            inp.setAttribute('autocorrect', 'off')
-            inp.setAttribute('spellcheck', 'false')
-            inp.className = "px-2 py-1 bg-white border-2 border-black text-xs text-black my-1 outline-none font-mono"
-            root.appendChild(inp)
-
-tk_module = types.ModuleType('tkinter')
-tk_module.Tk = DummyTk
-tk_module.Label = DummyWidget
-tk_module.Button = DummyButton
-tk_module.Entry = DummyEntry
-sys.modules['tkinter'] = tk_module
-`);
-
-                pyodideStatus.innerHTML = '<span class="w-2 h-2 rounded-full bg-[#00ff00]"></span> Engine Ready (Python 3.14)';
-                pyodideStatus.className = 'flex items-center gap-1.5 text-[#00ff00] text-[11px] ml-4';
-                
-                runBtn.disabled = false;
-                runText.textContent = 'Run';
-                renderFileTree();
-            } catch (err) {
-                pyodideStatus.textContent = 'Engine initialization failed';
-                appendTerminal(`Initialization Error: ${err.message}`, 'error');
-            }
-        }
-
-        // Run Python Code
-        async function runPython() {
-            if (!pyodide) return;
-            files[activeFile] = monacoEditor ? monacoEditor.getValue() : files[activeFile];
-
-            // Auto-switch tabs based on imported modules
-            const code = files[activeFile];
-            if (code.includes('import turtle') || code.includes('import pygame')) {
-                switchBottomTab('canvas');
-            } else if (code.includes('import tkinter')) {
-                switchBottomTab('gui');
-            }
-
-            // Sync files into MEMFS
-            Object.keys(files).forEach(filename => {
-                pyodide.FS.writeFile(`/home/pyodide/project/${filename}`, files[filename]);
-            });
-
-            appendTerminal(`\npython@codespace:~$ python ${activeFile}`, 'cmd');
-
-            try {
-                await pyodide.runPythonAsync(files[activeFile]);
-                renderFileTree();
-            } catch (err) {
-                appendTerminal(err.message, 'error');
-            }
-        }
-
-        runBtn.addEventListener('click', runPython);
-
-        // Terminal Shell Commands
-        terminalInput.addEventListener('keydown', async (e) => {
-            if (e.key === 'Enter') {
-                const cmd = terminalInput.value.trim();
-                terminalInput.value = '';
-
-                if (!cmd) return;
-
-                appendTerminal(`python@codespace:~$ ${cmd}`, 'cmd');
-
-                const parts = cmd.split(' ');
-                const command = parts[0];
-
-                if (command === 'clear') {
-                    terminalOutput.innerHTML = '';
-                } else if (command === 'ls') {
-                    const pyFiles = Object.keys(files).join('  ');
-                    appendTerminal(pyFiles || 'No files');
-                } else if (command === 'cat' && parts[1]) {
-                    appendTerminal(files[parts[1]] || `File not found: ${parts[1]}`, files[parts[1]] ? 'output' : 'error');
-                } else if (command === 'touch' && parts[1]) {
-                    files[parts[1]] = '# New File\n';
-                    renderFileTree();
-                    appendTerminal(`Created file ${parts[1]}`);
-                } else if (command === 'help') {
-                    appendTerminal("Available Commands: python <file>, ls, cat <file>, touch <file>, clear, help");
-                } else if (command === 'python' || command === 'python3') {
-                    if (parts[1] && files[parts[1]]) {
-                        switchFile(parts[1]);
-                        runPython();
-                    } else if (!parts[1]) {
-                        runPython();
-                    } else {
-                        appendTerminal(`File not found: ${parts[1]}`, 'error');
-                    }
-                } else {
-                    appendTerminal(`Command not recognized: ${command}. Type 'help' for options.`, 'error');
-                }
-            }
-        });
-
-        // Switch Panel Tabs
-        function switchBottomTab(tab) {
-            const termPanel = document.getElementById('panel-terminal');
-            const canvasPanel = document.getElementById('panel-canvas');
-            const guiPanel = document.getElementById('panel-gui');
-
-            const termBtn = document.getElementById('tab-btn-terminal');
-            const canvasBtn = document.getElementById('tab-btn-canvas');
-            const guiBtn = document.getElementById('tab-btn-gui');
-
-            termPanel.classList.add('hidden');
-            canvasPanel.classList.add('hidden');
-            guiPanel.classList.add('hidden');
-
-            termBtn.className = 'py-2 font-medium text-gray-400 hover:text-white border-b-2 border-transparent flex items-center gap-1.5';
-            canvasBtn.className = 'py-2 font-medium text-gray-400 hover:text-white border-b-2 border-transparent flex items-center gap-1.5';
-            guiBtn.className = 'py-2 font-medium text-gray-400 hover:text-white border-b-2 border-transparent flex items-center gap-1.5';
-
-            if (tab === 'terminal') {
-                termPanel.classList.remove('hidden');
-                termBtn.className = 'py-2 font-bold text-[#ffff00] border-b-2 border-[#ffff00] flex items-center gap-1.5';
-            } else if (tab === 'canvas') {
-                canvasPanel.classList.remove('hidden');
-                canvasBtn.className = 'py-2 font-bold text-[#00ffff] border-b-2 border-[#00ffff] flex items-center gap-1.5';
-            } else if (tab === 'gui') {
-                guiPanel.classList.remove('hidden');
-                guiBtn.className = 'py-2 font-bold text-[#f38518] border-b-2 border-[#f38518] flex items-center gap-1.5';
-            }
-        }
-
-        // New File Creation
-        document.getElementById('new-file-btn').addEventListener('click', () => {
-            const name = prompt('Enter new python file name:', 'script.py');
-            if (name) {
-                files[name] = `# File: ${name}\nimport os, sys, random, time\n\nprint("Running ${name}...")\n`;
-                switchFile(name);
-            }
-        });
-
-        // Templates
-        document.getElementById('template-select').addEventListener('change', (e) => {
-            const val = e.target.value;
-            if (val === 'turtle') {
-                switchBottomTab('canvas');
-                files['turtle_art.py'] = `import turtle
-
-t = turtle.Turtle()
-t.speed(0)
-
-colors = ["#00ff00", "#00ffff", "#ffff00", "#ff00ff"]
-for i in range(24):
-    t.color(colors[i % 4])
-    t.forward(100)
-    t.right(105)
-
-print("🎨 Turtle geometry rendered!")
-`;
-                switchFile('turtle_art.py');
-            } else if (val === 'pygame') {
-                switchBottomTab('canvas');
-                files['game_demo.py'] = `# Canvas Pygame/Graphics Demo
-import turtle
-
-t = turtle.Turtle()
-t.color("cyan")
-t.forward(120)
-t.right(90)
-t.forward(50)
-
-print("🎮 Game Canvas updated!")
-`;
-                switchFile('game_demo.py');
-            } else if (val === 'tkinter') {
-                switchBottomTab('gui');
-                files['gui_app.py'] = `import tkinter as tk
-
-root = tk.Tk()
-root.title("Python 3.14 GUI")
-
-label = tk.Label(root, text="Counter: 0")
-label.pack()
-
-count = 0
-def increment():
-    global count
-    count += 1
-    label.config(text=f"Counter: {count}")
-
-button = tk.Button(root, text="Increment +1", command=increment)
-button.pack()
-
-root.mainloop()
-`;
-                switchFile('gui_app.py');
-            } else if (val === 'os_demo') {
-                switchBottomTab('terminal');
-                files['os_demo.py'] = `import os, random
-
-print("Current Directory:", os.getcwd())
-data = f"Random Value: {random.randint(100, 999)}"
-
-with open("output.txt", "w") as f:
-    f.write(data)
-
-print("Created output.txt with:", data)
-`;
-                switchFile('os_demo.py');
-            }
-            e.target.value = "";
-        });
-
-        document.getElementById('clear-terminal-btn').addEventListener('click', () => {
-            terminalOutput.innerHTML = '';
-        });
-
-        document.getElementById('download-btn').addEventListener('click', () => {
-            const val = monacoEditor ? monacoEditor.getValue() : files[activeFile];
-            const blob = new Blob([val], { type: 'text/python' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = activeFile;
-            a.click();
-            URL.revokeObjectURL(url);
-        });
-
-        document.getElementById('refresh-tree-btn').addEventListener('click', renderFileTree);
-
-        window.onload = () => {
-            initMonaco();
-            switchFile('main.py');
-            initPyodide();
-        };
-    </script>
+  </div>
+
+  <!-- ── Dialog (new file / rename / run with input) ───────────────── -->
+  <dialog class="dialog" id="dialog">
+    <form method="dialog" class="dialog-form" id="dialog-form">
+      <h2 class="dialog-title" id="dialog-title">Title</h2>
+      <label class="dialog-label" id="dialog-label" for="dialog-input">Label</label>
+      <input class="dialog-input" id="dialog-input" autocomplete="off" spellcheck="false">
+      <textarea class="dialog-input dialog-textarea" id="dialog-textarea" rows="6" spellcheck="false" hidden></textarea>
+      <p class="dialog-hint" id="dialog-hint"></p>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" id="dialog-cancel" type="button">Cancel</button>
+        <button class="btn primary" value="ok" id="dialog-ok" type="submit">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div class="sr-only" id="sr-live" aria-live="assertive"></div>
 </body>
 </html>
