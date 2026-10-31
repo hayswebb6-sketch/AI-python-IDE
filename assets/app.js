@@ -98,6 +98,15 @@ window.__pyideDebug = {
 };
 
 
+window.addEventListener("error", (event) => {
+  try { dbg("uncaught error", event.message); } catch { /* ignore */ }
+  console.error(event.error || event.message);
+});
+window.addEventListener("unhandledrejection", (event) => {
+  try { dbg("unhandled rejection", String(event.reason)); } catch { /* ignore */ }
+  console.error(event.reason);
+});
+
 const dom = {
   app: $("app"),
   runtime: $("runtime"),
@@ -127,6 +136,7 @@ const dom = {
   canvas: $("canvas"),
   tkStage: $("tk-stage"),
   tkEmpty: $("tk-empty"),
+  htmlPreview: $("html-preview"),
 
   breadcrumbs: $("breadcrumbs"),
 
@@ -461,6 +471,27 @@ function refreshLanguage() {
     const language = languageFor(name);
     if (model.getLanguageId() !== language) monaco.editor.setModelLanguage(model, language);
   }
+  updateHtmlPreviewVisibility();
+}
+
+let htmlPreviewTimer = 0;
+function updateHtmlPreviewVisibility() {
+  if (!dom.htmlPreview || !dom.tkStage) return;
+  const isHtml = !!state.active && languageFor(state.active) === "html";
+  dom.htmlPreview.hidden = !isHtml;
+  dom.tkStage.hidden = isHtml;
+  if (isHtml) scheduleHtmlPreview();
+}
+
+function scheduleHtmlPreview() {
+  clearTimeout(htmlPreviewTimer);
+  htmlPreviewTimer = setTimeout(renderHtmlPreview, 300);
+}
+
+function renderHtmlPreview() {
+  if (!dom.htmlPreview) return;
+  const code = state.active ? (state.editor && !state.editor.fallback ? state.editor.getValue() : state.files.get(state.active) ?? "") : "";
+  dom.htmlPreview.srcdoc = code;
 }
 
 /* ==========================================================================
@@ -854,7 +885,7 @@ function loadMonaco() {
       return;
     }
 
-    const timeout = setTimeout(() => reject(new Error("Monaco timed out")), 20000);
+    const timeout = setTimeout(() => reject(new Error("Monaco timed out")), 8000);
 
     const workers = {
       editor: monacoWorker("vs/base/worker/workerMain.js"),
@@ -972,6 +1003,7 @@ async function initEditor() {
       renderTabs();
       renderFileList();
       scheduleSave();
+      if (languageFor(name) === "html") scheduleHtmlPreview();
     });
 
     state.editor.onDidChangeCursorPosition((event) => {
