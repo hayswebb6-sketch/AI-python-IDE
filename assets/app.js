@@ -13,7 +13,7 @@ import { registerPythonIntelliSense } from "./completions.js";
 import { createShell } from "./shell.js";
 
 const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
-const STORAGE_KEY = "pyide.workspace.v1";
+const STORAGE_KEY = "pyide.workspace.v2";
 const SETTINGS_KEY = "pyide.settings.v1";
 const SHELL_HISTORY_KEY = "pyide.shell.history.v1";
 const SHELL_DIRS_KEY = "pyide.shell.dirs.v1";
@@ -1341,7 +1341,22 @@ dom.promptInput.addEventListener("keydown", (event) => {
     const end = dom.promptInput.selectionEnd ?? 0;
     if (start !== end) {
       const selected = dom.promptInput.value.slice(start, end);
-      navigator.clipboard?.writeText(selected).catch(() => {});
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          navigator.clipboard.writeText(selected).catch(() => {});
+        } else {
+          const ta = document.createElement("textarea");
+          ta.value = selected;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.append(ta);
+          ta.select();
+          document.execCommand("copy");
+          ta.remove();
+        }
+      } catch {
+        /* ignore */
+      }
       return;
     }
     if (!dom.promptInput.value) return;
