@@ -107,6 +107,8 @@ window.addEventListener("unhandledrejection", (event) => {
   console.error(event.reason);
 });
 
+const $ = (id) => document.getElementById(id);
+
 const dom = {
   app: $("app"),
   runtime: $("runtime"),
