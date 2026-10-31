@@ -1020,7 +1020,7 @@ const LIGHT_THEME = {
 };
 
 function monacoWorker(path) {
-  const source = `self.MonacoEnvironment = { baseUrl: '${MONACO_CDN}/' };\nimportScripts('${MONACO_CDN}/${path.replace(/^vs\//, '')}');`;
+  const source = `self.MonacoEnvironment = { baseUrl: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/' };\nimportScripts('${MONACO_CDN}/${path.replace(/^vs\//, '')}');`;
   return URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
 }
 
@@ -1033,9 +1033,23 @@ function loadMonaco() {
 
     const timeout = setTimeout(() => reject(new Error("Monaco timed out")), 8000);
 
-    const workerSource = `self.MonacoEnvironment = { baseUrl: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/' };\nimportScripts('${MONACO_CDN}/base/worker/workerMain.js');`;
-    const workerUrl = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
-    window.MonacoEnvironment = { getWorkerUrl: () => workerUrl };
+    const workers = {
+      editor: monacoWorker("vs/base/worker/workerMain.js"),
+      json: monacoWorker("vs/language/json/jsonWorker.js"),
+      css: monacoWorker("vs/language/css/cssWorker.js"),
+      html: monacoWorker("vs/language/html/htmlWorker.js"),
+      typescript: monacoWorker("vs/language/typescript/tsWorker.js"),
+    };
+
+    window.MonacoEnvironment = {
+      getWorkerUrl(moduleId, label) {
+        if (label === "json") return workers.json;
+        if (label === "css" || label === "scss" || label === "less") return workers.css;
+        if (label === "html" || label === "handlebars" || label === "razor") return workers.html;
+        if (label === "typescript" || label === "javascript") return workers.typescript;
+        return workers.editor;
+      },
+    };
 
     window.require.config({ paths: { vs: MONACO_CDN } });
     window.require(["vs/editor/editor.main"], (monaco) => {
