@@ -283,3 +283,5 @@ html[data-theme="light"] .topbar { background: linear-gradient(180deg, #ffffff, 
 
 /* Ensure the hidden attribute always wins over class-based display rules. */
 [hidden] { display: none !important; }
+
+.file-icon { font-size: 14px; line-height: 1; flex: 0 0 auto; }

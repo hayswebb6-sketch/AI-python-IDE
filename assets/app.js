@@ -452,9 +452,25 @@ function languageFor(name) {
   return EXTENSION_LANGUAGE[extension] || "plaintext";
 }
 
-function languageLabel(id) {
-  return LANGUAGE_DEFS[id]?.label || "Plain Text";
+function fileIcon(name) {
+  if (!name) return "📄";
+  const extension = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  const icons = {
+    py: "🐍", js: "📜", mjs: "📜", cjs: "📜", ts: "🔷", tsx: "🔷", jsx: "📜",
+    html: "🌐", htm: "🌐", css: "🎨", scss: "🎨", less: "🎨",
+    json: "📋", md: "📝", markdown: "📝", txt: "📄", csv: "📊", log: "📄",
+    sh: "⚙️", bash: "⚙️", bat: "⚙️", cmd: "⚙️", ps1: "🔷",
+    c: "🔧", h: "🔧", cpp: "🔧", cc: "🔧", cxx: "🔧", hpp: "🔧",
+    java: "☕", go: "🐹", rs: "🦀", php: "🐘", rb: "💎", lua: "🌙",
+    swift: "🍎", kt: "🟣", kts: "🟣", r: "📊", dart: "🎯", pl: "🐪",
+    scala: "🔴", sql: "🗄️", yml: "⚙️", yaml: "⚙️", xml: "📰",
+    png: "🖼️", jpg: "🖼️", jpeg: "🖼️", gif: "🖼️", svg: "🖼️",
+    mp4: "🎬", mp3: "🎵", zip: "📦", exe: "⚙️",
+  };
+  if (name.endsWith("/")) return "📁";
+  return icons[extension] || "📄";
 }
+
 
 function updateStatusLanguage() {
   if (!dom.statusLanguage) return;
@@ -667,11 +683,9 @@ function renderFileList() {
     item.setAttribute("aria-selected", String(name === state.active));
     item.tabIndex = 0;
 
-    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    icon.setAttribute("class", "icon");
-    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-    use.setAttribute("href", "#i-file");
-    icon.append(use);
+    const icon = document.createElement("span");
+    icon.className = "file-icon";
+    icon.textContent = fileIcon(name);
 
     const label = document.createElement("span");
     label.className = "name";
@@ -740,9 +754,13 @@ function renderTabs() {
     tab.setAttribute("aria-selected", String(name === state.active));
     tab.tabIndex = 0;
 
-    tab.innerHTML = `<svg class="icon"><use href="#i-file"/></svg>`;
+    tab.innerHTML = "";
+    const icon = document.createElement("span");
+    icon.className = "file-icon";
+    icon.textContent = fileIcon(name);
+    tab.append(icon);
     const label = document.createElement("span");
-      label.textContent = name;
+    label.textContent = name;
     tab.append(label);
 
     if (isStale(name)) {
@@ -956,7 +974,7 @@ async function initEditor() {
     monaco.editor.defineTheme("pyide", THEME);
     monaco.editor.defineTheme("pyide-light", LIGHT_THEME);
     registerCompletions(monaco);
-
+    registerLanguageCompletions(monaco);
     state.editor = monaco.editor.create(dom.editor, {
       model: null,
       theme: settings.theme === "light" ? "pyide-light" : "pyide",
@@ -2899,6 +2917,161 @@ dom.paletteInput?.addEventListener("keydown", (event) => {
 
 renderBreadcrumbs();
 
+
+/* ==========================================================================
+ * Language completion providers (IntelliSense dropdowns)
+ * ========================================================================== */
+
+const LANGUAGE_COMPLETIONS = {
+  javascript: {
+    keywords: ["const","let","var","function","return","if","else","for","while","do","switch","case","break","continue","try","catch","finally","throw","new","class","extends","import","export","default","async","await","yield","typeof","instanceof","in","of","null","undefined","true","false","this","super"],
+    snippets: [
+      { label: "clg", insertText: "console.log(${1});", detail: "console.log" },
+      { label: "fn", insertText: "function ${1:name}(${2}) {\n  ${3}\n}", detail: "function" },
+      { label: "afn", insertText: "const ${1:name} = (${2}) => {\n  ${3}\n};", detail: "arrow function" },
+      { label: "forof", insertText: "for (const ${1:item} of ${2:items}) {\n  ${3}\n}", detail: "for...of" },
+      { label: "fori", insertText: "for (let i = 0; i < ${1:n}; i++) {\n  ${2}\n}", detail: "for loop" },
+      { label: "trycatch", insertText: "try {\n  ${1}\n} catch (e) {\n  ${2}\n}", detail: "try/catch" },
+    ],
+  },
+  typescript: {
+    keywords: ["const","let","var","function","return","if","else","for","while","do","switch","case","break","continue","try","catch","finally","throw","new","class","extends","import","export","default","async","await","yield","typeof","instanceof","in","of","null","undefined","true","false","this","super","interface","type","enum","implements","readonly","private","public","protected","as","keyof","never","unknown","any","void"],
+    snippets: [
+      { label: "clg", insertText: "console.log(${1});", detail: "console.log" },
+      { label: "iface", insertText: "interface ${1:Name} {\n  ${2}\n}", detail: "interface" },
+      { label: "type", insertText: "type ${1:Name} = ${2};", detail: "type alias" },
+    ],
+  },
+  c: {
+    keywords: ["auto","break","case","char","const","continue","default","do","double","else","enum","extern","float","for","goto","if","int","long","register","return","short","signed","sizeof","static","struct","switch","typedef","union","unsigned","void","volatile","while","#include","#define","#ifdef","#ifndef","#endif","#pragma"],
+    snippets: [
+      { label: "main", insertText: "int main(void) {\n  ${1}\n  return 0;\n}", detail: "main function" },
+      { label: "inc", insertText: "#include <${1:stdio.h}>", detail: "include" },
+      { label: "fori", insertText: "for (int i = 0; i < ${1:n}; i++) {\n  ${2}\n}", detail: "for loop" },
+      { label: "printf", insertText: "printf(\"${1:%s}\\n\", ${2});", detail: "printf" },
+    ],
+  },
+  cpp: {
+    keywords: ["alignas","alignof","and","and_eq","asm","auto","bitand","bitor","bool","break","case","catch","char","char8_t","char16_t","char32_t","class","compl","concept","const","consteval","constexpr","constinit","const_cast","continue","co_await","co_return","co_yield","decltype","default","delete","do","double","dynamic_cast","else","enum","explicit","export","extern","false","float","for","friend","goto","if","inline","int","long","mutable","namespace","new","noexcept","not","not_eq","nullptr","operator","or","or_eq","private","protected","public","register","reinterpret_cast","requires","return","short","signed","sizeof","static","static_assert","static_cast","struct","switch","template","this","thread_local","throw","true","try","typedef","typeid","typename","union","unsigned","using","virtual","void","volatile","wchar_t","while","xor","xor_eq","#include"],
+    snippets: [
+      { label: "main", insertText: "int main() {\n  ${1}\n  return 0;\n}", detail: "main function" },
+      { label: "inc", insertText: "#include <${1:iostream}>", detail: "include" },
+      { label: "cout", insertText: "std::cout << ${1} << std::endl;", detail: "cout" },
+      { label: "class", insertText: "class ${1:Name} {\npublic:\n  ${2}\n};", detail: "class" },
+    ],
+  },
+  java: {
+    keywords: ["abstract","assert","boolean","break","byte","case","catch","char","class","const","continue","default","do","double","else","enum","extends","final","finally","float","for","goto","if","implements","import","instanceof","int","interface","long","native","new","package","private","protected","public","return","short","static","strictfp","super","switch","synchronized","this","throw","throws","transient","try","void","volatile","while"],
+    snippets: [
+      { label: "main", insertText: "public static void main(String[] args) {\n  ${1}\n}", detail: "main method" },
+      { label: "sout", insertText: "System.out.println(${1});", detail: "println" },
+      { label: "class", insertText: "public class ${1:Name} {\n  ${2}\n}", detail: "class" },
+      { label: "fori", insertText: "for (int i = 0; i < ${1:n}; i++) {\n  ${2}\n}", detail: "for loop" },
+    ],
+  },
+  go: {
+    keywords: ["break","case","chan","const","continue","default","defer","else","fallthrough","for","func","go","goto","if","import","interface","map","package","range","return","select","struct","switch","type","var"],
+    snippets: [
+      { label: "main", insertText: "func main() {\n  ${1}\n}", detail: "main function" },
+      { label: "fmt", insertText: "fmt.Println(${1})", detail: "println" },
+      { label: "fori", insertText: "for i := 0; i < ${1:n}; i++ {\n  ${2}\n}", detail: "for loop" },
+    ],
+  },
+  rust: {
+    keywords: ["as","async","await","break","const","continue","crate","dyn","else","enum","extern","false","fn","for","if","impl","in","let","loop","match","mod","move","mut","pub","ref","return","self","Self","static","struct","super","trait","true","type","unsafe","use","where","while"],
+    snippets: [
+      { label: "main", insertText: "fn main() {\n  ${1}\n}", detail: "main function" },
+      { label: "println", insertText: "println!(\"${1}\");", detail: "println!" },
+      { label: "fori", insertText: "for i in 0..${1:n} {\n  ${2}\n}", detail: "for loop" },
+    ],
+  },
+  shell: {
+    keywords: ["if","then","else","elif","fi","for","while","do","done","case","esac","function","return","export","local","readonly","unset","shift","trap","source","alias","unalias","echo","printf","cd","pwd","ls","cat","grep","sed","awk","find","xargs","sort","uniq","head","tail","wc","mkdir","rm","cp","mv","chmod","chown","sudo","apt","pip","python","node","git"],
+    snippets: [
+      { label: "if", insertText: "if [ ${1} ]; then\n  ${2}\nfi", detail: "if statement" },
+      { label: "for", insertText: "for i in ${1}; do\n  ${2}\ndone", detail: "for loop" },
+      { label: "case", insertText: "case ${1} in\n  ${2})\n    ;;\nesac", detail: "case statement" },
+    ],
+  },
+  bat: {
+    keywords: ["@echo","off","echo","set","if","else","for","do","in","goto","call","exit","pause","rem","cls","cd","dir","copy","del","move","mkdir","rmdir","start","taskkill","ping","timeout"],
+    snippets: [
+      { label: "if", insertText: "if ${1} (\n  ${2}\n)", detail: "if block" },
+      { label: "for", insertText: "for %%i in (${1}) do (\n  ${2}\n)", detail: "for loop" },
+    ],
+  },
+  html: {
+    keywords: [],
+    snippets: [
+      { label: "html5", insertText: "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>${1:Document}</title>\n</head>\n<body>\n  ${2}\n</body>\n</html>", detail: "HTML5 boilerplate" },
+      { label: "div", insertText: "<div>${1}</div>", detail: "div" },
+      { label: "script", insertText: "<script>\n  ${1}\n</script>", detail: "script" },
+      { label: "style", insertText: "<style>\n  ${1}\n</style>", detail: "style" },
+    ],
+  },
+  css: {
+    keywords: [],
+    snippets: [
+      { label: "flex", insertText: "display: flex;\njustify-content: center;\nalign-items: center;", detail: "flex center" },
+      { label: "grid", insertText: "display: grid;\ngrid-template-columns: repeat(${1:3}, 1fr);", detail: "grid" },
+      { label: "media", insertText: "@media (max-width: ${1:768px}) {\n  ${2}\n}", detail: "media query" },
+    ],
+  },
+  json: {
+    keywords: [],
+    snippets: [
+      { label: "obj", insertText: "{\n  \"${1:key}\": ${2:\"value\"}\n}", detail: "object" },
+    ],
+  },
+  markdown: {
+    keywords: [],
+    snippets: [
+      { label: "code", insertText: "```${1:js}\n${2}\n```", detail: "code block" },
+      { label: "link", insertText: "[${1:text}](${2:url})", detail: "link" },
+      { label: "table", insertText: "| ${1:Col} | ${2:Col} |\n|---|---|\n| ${3} | ${4} |", detail: "table" },
+    ],
+  },
+};
+
+function registerLanguageCompletions(monaco) {
+  for (const [language, data] of Object.entries(LANGUAGE_COMPLETIONS)) {
+    const keywords = data.keywords || [];
+    const snippets = data.snippets || [];
+    if (!keywords.length && !snippets.length) continue;
+    monaco.languages.registerCompletionItemProvider(language, {
+      triggerCharacters: [".", ">", ":", "#", "<", "/"],
+      provideCompletionItems(model, position) {
+        const word = model.getWordUntilPosition(position);
+        const range = {
+          startLineNumber: position.lineNumber,
+          endLineNumber: position.lineNumber,
+          startColumn: word.startColumn,
+          endColumn: word.endColumn,
+        };
+        const suggestions = [];
+        for (const keyword of keywords) {
+          suggestions.push({
+            label: keyword,
+            kind: monaco.languages.CompletionItemKind.Keyword,
+            insertText: keyword,
+            range,
+          });
+        }
+        for (const snippet of snippets) {
+          suggestions.push({
+            label: snippet.label,
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: snippet.insertText,
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: snippet.detail,
+            range,
+          });
+        }
+        return { suggestions };
+      },
+    });
+  }
+}
 
 function boot() {
   dbg("boot");
