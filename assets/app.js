@@ -2930,8 +2930,8 @@ function boot() {
   }, 2000);
   state.runtime = "idle";
   dom.runtime.dataset.state = "idle";
-  dom.runtimeText.textContent = "Python runtime � runs on demand";
-  dom.statusRuntime.textContent = "Python � on demand";
+  dom.runtimeText.textContent = "Python runtime - runs on demand";
+  dom.statusRuntime.textContent = "Python - on demand";
   updateRunButtons();
 }
 
