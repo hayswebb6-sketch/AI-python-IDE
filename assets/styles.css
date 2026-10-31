@@ -280,3 +280,6 @@ html[data-theme="light"] .topbar { background: linear-gradient(180deg, #ffffff, 
   border: 0;
   background: #ffffff;
 }
+
+/* Ensure the hidden attribute always wins over class-based display rules. */
+[hidden] { display: none !important; }
