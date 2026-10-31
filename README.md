@@ -10,8 +10,8 @@ HTML, CSS and ES modules, so it deploys straight to Render as a static site.
 - **Monaco editor** (VS Code's editor) with real autocomplete, hover, signature help and
   light/dark themes.
 - **Two runnable languages**: Python (Pyodide) and JavaScript (Web Worker). TypeScript,
-  HTML, CSS, JSON, Markdown, Shell and PowerShell are first-class editing languages with
-  proper language detection and a status-bar language picker.
+  HTML, CSS, JSON, Markdown, Shell, PowerShell, C and C++ are first-class editing
+  languages with proper language detection and a status-bar language picker.
 - **Tkinter / turtle / pygame previews**: tkinter widgets render in a live Window panel,
   turtle and pygame draw on a Canvas panel.
 - **A real shell** in the terminal: bash and PowerShell modes, pipes, redirects,

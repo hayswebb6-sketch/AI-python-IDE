@@ -15,7 +15,24 @@
 /* global loadPyodide */
 
 const PYODIDE_VERSION = "314.0.7";
-const CDN = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+let CDN = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+
+function loadPyodideScript() {
+  const candidates = [
+    `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`,
+  ];
+  let lastError = null;
+  for (const candidate of candidates) {
+    try {
+      importScripts(`${candidate}pyodide.js`);
+      CDN = candidate;
+      return true;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("importScripts failed");
+}
 const PROJECT_DIR = "/home/pyodide/project";
 
 let py = null;
@@ -57,10 +74,10 @@ function boot() {
   post({ type: "status", state: "loading", message: "Downloading Python runtime…", progress: 0.05 });
 
   try {
-    importScripts(`${CDN}pyodide.js`);
+    loadPyodideScript();
   } catch (error) {
     post({ type: "status", state: "error", message: "Could not load Pyodide from the CDN." });
-    post({ type: "fatal", text: String(error) });
+    post({ type: "fatal", text: `${error && error.message ? error.message : error}\nURL: ${CDN}pyodide.js` });
     return;
   }
 

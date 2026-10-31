@@ -252,3 +252,23 @@ html[data-theme="light"] .topbar { background: linear-gradient(180deg, #ffffff, 
   .app.sidebar-open .sidebar { transform: translateX(0); }
   .app.sidebar-open .sidebar-scrim { display: block; position: fixed; inset: var(--topbar-h) 0 0 0; background: rgba(0,0,0,.4); z-index: 55; }
 }
+
+/* Breadcrumbs + command palette */
+.breadcrumbs {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.breadcrumbs:empty { display: none; }
+
+.palette-form { padding: 8px; display: flex; flex-direction: column; gap: 8px; min-width: 420px; max-width: 90vw; }
+.palette-input { padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--text); font-size: 14px; }
+.palette-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow: auto; }
+.palette-item { padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.palette-item:hover { background: var(--panel-3); }
+.palette-item.is-active { background: var(--accent-soft); color: var(--accent); }

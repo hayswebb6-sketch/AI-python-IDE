@@ -69,167 +69,8 @@ function saveSettings() {
  * Templates
  * ========================================================================== */
 
-const WELCOME = `"""Welcome to the Python IDE.
-
-Everything runs locally in your browser (CPython compiled to WebAssembly).
-Nothing is uploaded and there is no server.
-
-Press  Ctrl+Enter  to run this file.
-"""
-
-import sys
-
-print(f"Hello from Python {sys.version.split()[0]}!")
-print("Edit this file, then press Run.")
-
-squares = [n ** 2 for n in range(1, 11)]
-print("First ten squares:", squares)
-`;
-
-const TURTLE_DEMO = `"""Turtle graphics — rendered on the Canvas panel."""
-
-import turtle
-
-t = turtle.Turtle()
-t.speed(0)
-t.pensize(3)
-
-colors = ["#38bdf8", "#a78bfa", "#34d399", "#fbbf24", "#f87171"]
-for i in range(120):
-    t.color(colors[i % len(colors)])
-    t.forward(i * 1.6)
-    t.left(59)
-
-t.hideturtle()
-print("Drew 120 segments.")
-`;
-
-const TKINTER_DEMO = `"""Tkinter — rendered in the Window panel. Events really work."""
-
-import tkinter as tk
-
-count = 0
-
-root = tk.Tk()
-root.title("Tkinter counter")
-root.geometry("340x200")
-
-label = tk.Label(root, text="Clicks: 0", font=("Segoe UI", 14))
-label.pack(pady=(20, 10))
-
-def increment():
-    global count
-    count += 1
-    label.config(text=f"Clicks: {count}")
-
-button = tk.Button(root, text="Click me", command=increment)
-button.pack()
-
-root.mainloop()
-`;
-
-const PYGAME_DEMO = `"""Pygame — a small subset is drawn on the Canvas panel."""
-
-import math
-import pygame
-
-pygame.init()
-screen = pygame.display.set_mode((640, 400))
-pygame.display.set_caption("Pygame canvas")
-clock = pygame.time.Clock()
-
-for frame in range(120):
-    screen.fill((10, 16, 28))
-
-    for i in range(24):
-        angle = i * (math.tau / 24) + frame * 0.05
-        x = 320 + math.cos(angle) * (60 + i * 4)
-        y = 200 + math.sin(angle) * (60 + i * 4)
-        pygame.draw.circle(screen, (56, 189, 248), (int(x), int(y)), 4)
-
-    pygame.draw.line(screen, (167, 139, 250), (40, 360), (600, 360), 3)
-    clock.tick(60)
-
-print("Pygame scene finished.")
-`;
-
-const FILES_DEMO = `"""The virtual filesystem lives in the browser (Pyodide MEMFS)."""
-
-import json
-import os
-import random
-
-payload = {"value": random.randint(100, 999), "files": []}
-
-with open("output.json", "w", encoding="utf-8") as handle:
-    json.dump(payload, handle, indent=2)
-
-with open("notes.txt", "w", encoding="utf-8") as handle:
-    handle.write("Written by Python, saved back into the workspace.\\n")
-
-print("cwd:", os.getcwd())
-print("files:", sorted(name for name in os.listdir(".") if not name.startswith(".")))
-print("output.json ->", open("output.json", encoding="utf-8").read())
-`;
-
-const JAVASCRIPT_DEMO = `// JavaScript runs in a fresh Web Worker on every Run.
-// It has the real language — console, timers, top-level await — but no DOM.
-
-const squares = Array.from({ length: 10 }, (_, i) => (i + 1) ** 2);
-console.log("First ten squares:", squares);
-
-const user = { name: "Ada", language: "JavaScript", year: 2026 };
-console.log(user);
-console.log("Sum:", squares.reduce((total, n) => total + n, 0));
-
-await new Promise((resolve) => setTimeout(resolve, 250));
-console.log("Finished after a short pause.");
-`;
-
-const HTML_DEMO = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hello from the Python IDE</title>
-  <style>
-    :root { color-scheme: dark; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      background: #0c111b;
-      color: #dbe3f4;
-      font: 16px/1.6 system-ui, sans-serif;
-    }
-    .card {
-      padding: 32px 40px;
-      border: 1px solid #22304a;
-      border-radius: 16px;
-      background: #111827;
-      box-shadow: 0 24px 60px #0008;
-    }
-    h1 { margin: 0 0 8px; color: #38bdf8; }
-  </style>
-</head>
-<body>
-  <main class="card">
-    <h1>Hello, browser.</h1>
-    <p>HTML and CSS are editing-only languages here. Press Run only for Python and JavaScript.</p>
-  </main>
-</body>
-</html>
-`;
-
 const TEMPLATES = {
-  turtle: { name: "turtle_art.py", content: TURTLE_DEMO },
-  tkinter: { name: "tkinter_app.py", content: TKINTER_DEMO },
-  pygame: { name: "pygame_scene.py", content: PYGAME_DEMO },
-  files: { name: "files_demo.py", content: FILES_DEMO },
-  javascript: { name: "hello.js", content: JAVASCRIPT_DEMO },
-  html: { name: "page.html", content: HTML_DEMO },
-  blank: { name: "script.py", content: "# New file\n\n" },
+  blank: { name: "script.txt", content: "" },
 };
 
 /* ==========================================================================
@@ -268,6 +109,8 @@ const dom = {
   tkStage: $("tk-stage"),
   tkEmpty: $("tk-empty"),
 
+  breadcrumbs: $("breadcrumbs"),
+
   btnRun: $("btn-run"),
   btnRunMenu: $("btn-run-menu"),
   btnStop: $("btn-stop"),
@@ -293,6 +136,10 @@ const dom = {
 
   settingsDialog: $("settings-dialog"),
   settingsForm: $("settings-form"),
+
+  palette: $("palette"),
+  paletteInput: $("palette-input"),
+  paletteList: $("palette-list"),
 
   toasts: $("toasts"),
   srLive: $("sr-live"),
@@ -380,13 +227,8 @@ function restoreWorkspace() {
     state.panel = ["terminal", "canvas", "window"].includes(saved.panel) ? saved.panel : "terminal";
     if (Number.isFinite(saved.consoleHeight)) state.consoleHeight = saved.consoleHeight;
   } else {
-    state.files.set("main.py", WELCOME);
-    state.files.set("turtle_art.py", TURTLE_DEMO);
-    state.files.set("tkinter_app.py", TKINTER_DEMO);
-    state.files.set("hello.js", JAVASCRIPT_DEMO);
-    state.files.set("page.html", HTML_DEMO);
-    state.openTabs = ["main.py"];
-    state.active = "main.py";
+    state.openTabs = [];
+    state.active = null;
   }
   try {
     const savedDirs = JSON.parse(localStorage.getItem(SHELL_DIRS_KEY) || "null");
@@ -486,6 +328,25 @@ document.addEventListener("click", (event) => {
  * ========================================================================== */
 
 const LANGUAGE_DEFS = {
+  go: { label: "Go", short: "go", runnable: false },
+  rust: { label: "Rust", short: "rs", runnable: false },
+  java: { label: "Java", short: "java", runnable: false },
+  csharp: { label: "C#", short: "cs", runnable: false },
+  sql: { label: "SQL", short: "sql", runnable: false },
+  yaml: { label: "YAML", short: "yml", runnable: false },
+  xml: { label: "XML", short: "xml", runnable: false },
+  php: { label: "PHP", short: "php", runnable: false },
+  ruby: { label: "Ruby", short: "rb", runnable: false },
+  lua: { label: "Lua", short: "lua", runnable: false },
+  swift: { label: "Swift", short: "swift", runnable: false },
+  kotlin: { label: "Kotlin", short: "kt", runnable: false },
+  r: { label: "R", short: "r", runnable: false },
+  dart: { label: "Dart", short: "dart", runnable: false },
+  perl: { label: "Perl", short: "pl", runnable: false },
+  scala: { label: "Scala", short: "scala", runnable: false },
+  batch: { label: "Batch", short: "bat", runnable: false },
+  c: { label: "C", short: "c", runnable: false },
+  cpp: { label: "C++", short: "cpp", runnable: false },
   python: { label: "Python", short: "py", runnable: true },
   javascript: { label: "JavaScript", short: "js", runnable: true },
   typescript: { label: "TypeScript", short: "ts", runnable: false },
@@ -499,6 +360,34 @@ const LANGUAGE_DEFS = {
 };
 
 const EXTENSION_LANGUAGE = {
+  go: "go",
+  rs: "rust",
+  java: "java",
+  cs: "csharp",
+  sql: "sql",
+  yml: "yaml",
+  yaml: "yaml",
+  xml: "xml",
+  php: "php",
+  rb: "ruby",
+  lua: "lua",
+  swift: "swift",
+  kt: "kotlin",
+  kts: "kotlin",
+  r: "r",
+  dart: "dart",
+  pl: "perl",
+  scala: "scala",
+  sc: "scala",
+  bat: "batch",
+  cmd: "batch",
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  cc: "cpp",
+  cxx: "cpp",
+  hpp: "cpp",
+  hh: "cpp",
   py: "python",
   pyw: "python",
   js: "javascript",
@@ -658,13 +547,8 @@ function resetWorkspace() {
   state.files.clear();
   state.dirs.clear();
   state.languages = {};
-  state.files.set("main.py", WELCOME);
-  state.files.set("turtle_art.py", TURTLE_DEMO);
-  state.files.set("tkinter_app.py", TKINTER_DEMO);
-  state.files.set("hello.js", JAVASCRIPT_DEMO);
-  state.files.set("page.html", HTML_DEMO);
-  state.openTabs = ["main.py"];
-  state.active = "main.py";
+  state.openTabs = [];
+  state.active = null;
   renderFileList();
   renderTabs();
   syncEditor();
@@ -689,6 +573,7 @@ function edgeActivate(name) {
   syncEditor();
   refreshLanguage();
   updateRunButtons();
+  renderBreadcrumbs();
   scheduleSave();
 }
 
@@ -1452,7 +1337,14 @@ dom.promptInput.addEventListener("keydown", (event) => {
       writeTerminal(result.matches.join("  "), "sys");
     }
   } else if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "c") {
-    if (!dom.promptInput.selectionStart && !dom.promptInput.selectionEnd && !dom.promptInput.value) return;
+    const start = dom.promptInput.selectionStart ?? 0;
+    const end = dom.promptInput.selectionEnd ?? 0;
+    if (start !== end) {
+      const selected = dom.promptInput.value.slice(start, end);
+      navigator.clipboard?.writeText(selected).catch(() => {});
+      return;
+    }
+    if (!dom.promptInput.value) return;
     event.preventDefault();
     writeTerminal(`${shell.promptText()} ${dom.promptInput.value}^C`, "cmd");
     dom.promptInput.value = "";
@@ -1510,8 +1402,19 @@ function startWorker() {
   setRuntime("loading", "Starting runtime…");
 }
 
-function stopRuntime(reason = "Runtime restarted.") {
+const runtimeReadyResolvers = [];
+
+function ensureRuntime() {
+  if (state.runtime === "ready") return Promise.resolve();
+  if (state.runtime === "loading" || state.runtime === "idle") {
+    if (!state.worker) startWorker();
+    return new Promise((resolve) => runtimeReadyResolvers.push(resolve));
+  }
   startWorker();
+  return new Promise((resolve) => runtimeReadyResolvers.push(resolve));
+}
+
+function stopRuntime(reason = "Runtime restarted.") {
   setRuntime("loading", "Restarting runtime…");
   writeTerminal(`\n${reason}`, "sys");
 }
@@ -1599,6 +1502,7 @@ function onWorkerMessage({ data }) {
         state.pyVersion = data.pythonVersion || state.pyVersion;
         dom.statusRuntime.textContent = `Python ${state.pyVersion} · Pyodide ${PYODIDE_VERSION}`;
         setRuntime("ready", data.message || `Python ${state.pyVersion} ready`);
+        while (runtimeReadyResolvers.length) runtimeReadyResolvers.shift()();
       } else if (data.state === "error") {
         setRuntime("error", data.message || "Runtime error");
       } else {
@@ -2305,10 +2209,6 @@ function runActive() {
   }
   const language = languageFor(state.active);
   if (language === "python") {
-    if (state.runtime !== "ready") {
-      toast(state.runtime === "running" ? "Already running." : "The Python runtime is still starting…");
-      return;
-    }
     runFile(state.active, []);
   } else if (language === "javascript") {
     if (state.jsRunning) {
@@ -2316,8 +2216,12 @@ function runActive() {
       return;
     }
     runJavaScript(state.active);
+  } else if (language === "shell" || language === "batch") {
+    runShellFile(state.active);
+  } else if (language === "html") {
+    runHtmlFile(state.active);
   } else {
-    toast(`${languageLabel(language)} files are editing-only — Run supports Python and JavaScript.`);
+    toast(`${languageLabel(language)} files are editing-only — Run supports Python, JavaScript, Shell and HTML preview.`);
   }
 }
 
@@ -2339,10 +2243,11 @@ async function runWithInput() {
   runFile(state.active, lines);
 }
 
-function runFile(name, stdin, options = {}) {
+async function runFile(name, stdin, options = {}) {
   const quiet = Boolean(options.quiet);
-  if (state.runtime !== "ready") return Promise.resolve(false);
-  if (!state.files.has(name)) return Promise.resolve(false);
+  if (!state.files.has(name)) return false;
+  await ensureRuntime();
+  if (state.runtime !== "ready") return false;
 
   snapshotActive();
   showConsole("terminal");
@@ -2365,6 +2270,33 @@ function runFile(name, stdin, options = {}) {
   });
 }
 
+async function runShellFile(name) {
+  if (!shell) {
+    toast("The shell is still starting…");
+    return;
+  }
+  const code = state.files.get(name) ?? "";
+  showConsole("terminal");
+  writeTerminal(` ${name}`, "cmd");
+  for (const line of String(code).split(/\r?\n/)) {
+    if (line.trim()) await shell.execute(line);
+  }
+  writeTerminal("Shell script finished.", "ok");
+}
+
+function runHtmlFile(name) {
+  const code = state.files.get(name) ?? "";
+  const blob = new Blob([code], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, "_blank", "noopener");
+  if (!opened) {
+    toast("Popup blocked — allow popups for the preview.", "error");
+    return;
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  toast("Opened HTML preview.", "ok");
+}
+
 function finishRun(data) {
   const seconds = ((data.ms || 0) / 1000).toFixed(2);
   writeTerminal(
@@ -2375,6 +2307,7 @@ function finishRun(data) {
   mergeRunFiles(data.files || {});
   renderTabs();
   renderFileList();
+  renderBreadcrumbs();
   scheduleSave();
 }
 function mergeRunFiles(returned) {
@@ -2694,6 +2627,142 @@ document.addEventListener("keydown", (event) => {
  * Boot
  * ========================================================================== */
 
+/* ==========================================================================
+ * Command palette, breadcrumbs, formatting
+ * ========================================================================== */
+
+const PALETTE_COMMANDS = [
+  { label: "Run active file", run: () => runActive() },
+  { label: "Run with input…", run: () => runWithInput() },
+  { label: "New file", run: () => dom.btnNew.click() },
+  { label: "Open settings", run: () => dom.btnSettings.click() },
+  { label: "Toggle theme", run: () => { settings.theme = settings.theme === "dark" ? "light" : "dark"; saveSettings(); applySettings(); } },
+  { label: "Format document", run: () => formatDocument() },
+  { label: "Clear terminal", run: () => clearTerminal() },
+  { label: "Reset workspace", run: () => resetWorkspace() },
+  { label: "Toggle sidebar", run: () => $("btn-sidebar").click() },
+  { label: "Toggle console", run: () => dom.app.classList.toggle("console-hidden") },
+  { label: "Download active file", run: () => dom.btnExport.click() },
+];
+
+let paletteIndex = 0;
+
+function renderBreadcrumbs() {
+  if (!dom.breadcrumbs) return;
+  if (!state.active) {
+    dom.breadcrumbs.textContent = "";
+    dom.breadcrumbs.hidden = true;
+    return;
+  }
+  dom.breadcrumbs.hidden = false;
+  dom.breadcrumbs.textContent = state.active;
+}
+
+function openPalette() {
+  if (!dom.palette) return;
+  dom.paletteInput.value = "";
+  paletteIndex = 0;
+  renderPalette("");
+  dom.palette.showModal();
+  dom.paletteInput.focus();
+}
+
+function renderPalette(query) {
+  if (!dom.paletteList) return;
+  const q = query.trim().toLowerCase();
+  const items = PALETTE_COMMANDS.filter((command) => !q || command.label.toLowerCase().includes(q));
+  dom.paletteList.replaceChildren();
+  items.forEach((command, index) => {
+    const li = document.createElement("li");
+    li.className = `palette-item${index === paletteIndex ? " is-active" : ""}`;
+    li.textContent = command.label;
+    li.addEventListener("click", () => {
+      dom.palette.close();
+      command.run();
+    });
+    dom.paletteList.append(li);
+  });
+  if (paletteIndex >= items.length) paletteIndex = Math.max(0, items.length - 1);
+}
+
+async function loadPrettier() {
+  if (window.prettier) return;
+  const sources = [
+    "https://cdn.jsdelivr.net/npm/prettier@3.3.3/standalone.js",
+    "https://cdn.jsdelivr.net/npm/prettier@3.3.3/plugins/babel.js",
+    "https://cdn.jsdelivr.net/npm/prettier@3.3.3/plugins/html.js",
+    "https://cdn.jsdelivr.net/npm/prettier@3.3.3/plugins/postcss.js",
+    "https://cdn.jsdelivr.net/npm/prettier@3.3.3/plugins/markdown.js",
+  ];
+  await Promise.all(sources.map((src) => new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.append(script);
+  })));
+}
+
+async function formatDocument() {
+  if (!state.active || !state.editor || state.editor.fallback) {
+    toast("Open a file in the Monaco editor first.", "error");
+    return;
+  }
+  const language = languageFor(state.active);
+  const parserByLanguage = {
+    javascript: "babel",
+    typescript: "typescript",
+    html: "html",
+    css: "css",
+    json: "json",
+    markdown: "markdown",
+  };
+  const parser = parserByLanguage[language];
+  if (!parser) {
+    toast(`No formatter for ${languageLabel(language)}.`, "error");
+    return;
+  }
+  try {
+    await loadPrettier();
+    const plugins = Object.values(window.prettierPlugins || {});
+    const output = window.prettier.format(state.editor.getValue(), { parser, plugins });
+    state.editor.setValue(output);
+    toast("Formatted.", "ok");
+  } catch (error) {
+    toast(`Format failed: ${error?.message || error}`, "error");
+  }
+}
+
+// palette wiring
+dom.palette?.addEventListener("close", () => {});
+dom.paletteInput?.addEventListener("input", (event) => {
+  paletteIndex = 0;
+  renderPalette(event.target.value);
+});
+dom.paletteInput?.addEventListener("keydown", (event) => {
+  const items = [...(dom.paletteList?.children || [])];
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    paletteIndex = Math.min(items.length - 1, paletteIndex + 1);
+    renderPalette(dom.paletteInput.value);
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    paletteIndex = Math.max(0, paletteIndex - 1);
+    renderPalette(dom.paletteInput.value);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    const visible = PALETTE_COMMANDS.filter((command) => !dom.paletteInput.value.trim() || command.label.toLowerCase().includes(dom.paletteInput.value.trim().toLowerCase()));
+    const command = visible[paletteIndex];
+    if (command) {
+      dom.palette.close();
+      command.run();
+    }
+  }
+});
+
+renderBreadcrumbs();
+
+
 function boot() {
   loadSettings();
   restoreWorkspace();
@@ -2713,12 +2782,22 @@ function boot() {
   applySettings();
   refreshPrompt();
   initEditor();
-  startWorker();
+  state.runtime = "idle";
+  dom.runtime.dataset.state = "idle";
+  dom.runtimeText.textContent = "Python runtime � runs on demand";
+  dom.statusRuntime.textContent = "Python � on demand";
+  updateRunButtons();
 }
 
 window.addEventListener("beforeunload", () => {
   snapshotActive();
   saveWorkspace();
 });
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
 
 boot();

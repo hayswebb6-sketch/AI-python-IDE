@@ -109,12 +109,6 @@
             </button>
             <div class="menu" id="new-menu" role="menu" hidden>
               <button role="menuitem" data-template="blank"><span>Blank file</span><kbd>py</kbd></button>
-               <button role="menuitem" data-template="javascript"><span>JavaScript file</span><kbd>js</kbd></button>
-               <button role="menuitem" data-template="html"><span>HTML page</span><kbd>html</kbd></button>
-              <button role="menuitem" data-template="turtle"><span>Turtle art</span></button>
-              <button role="menuitem" data-template="tkinter"><span>Tkinter app</span></button>
-              <button role="menuitem" data-template="pygame"><span>Pygame canvas</span></button>
-              <button role="menuitem" data-template="files"><span>Files &amp; OS demo</span></button>
             </div>
           </div>
         </div>
@@ -136,6 +130,7 @@
 
       <main class="editor-pane">
         <div class="tabs" id="tabs" role="tablist" aria-label="Open files"></div>
+        <div class="breadcrumbs" id="breadcrumbs"></div>
         <div class="editor-wrap">
           <div class="editor" id="editor"></div>
           <div class="empty-state" id="empty-state" hidden>
