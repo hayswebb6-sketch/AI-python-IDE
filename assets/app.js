@@ -3386,7 +3386,6 @@ function boot() {
   renderFileList();
   renderTabs();
   populateLanguageSelect();
-  populateLangPicker();
   showPanel(state.panel);
 
   writeTerminal(
