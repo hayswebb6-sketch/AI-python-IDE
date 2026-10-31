@@ -1,5 +1,5 @@
 /* Python IDE — offline cache */
-const CACHE_NAME = "pyide-v17";
+const CACHE_NAME = "pyide-v18";
 const PRECACHE = ["/", "/index.html", "/assets/app.js", "/assets/styles.css", "/assets/shell.js", "/assets/completions.js", "/assets/js-worker.js", "/assets/worker.js", "/assets/shims.py"];
 
 self.addEventListener("install", (event) => {
