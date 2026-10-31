@@ -285,3 +285,6 @@ html[data-theme="light"] .topbar { background: linear-gradient(180deg, #ffffff, 
 [hidden] { display: none !important; }
 
 .file-icon { font-size: 14px; line-height: 1; flex: 0 0 auto; }
+
+.file-icon-wrap { display: inline-flex; align-items: center; width: 16px; height: 16px; flex: 0 0 auto; }
+.file-icon-img { width: 16px; height: 16px; }

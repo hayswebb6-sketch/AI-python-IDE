@@ -165,6 +165,9 @@ const dom = {
   dialogOk: $("dialog-ok"),
   dialogCancel: $("dialog-cancel"),
 
+  langDialog: $("lang-dialog"),
+  langPicker: $("lang-picker"),
+
   settingsDialog: $("settings-dialog"),
   settingsForm: $("settings-form"),
 
@@ -452,6 +455,29 @@ function languageFor(name) {
   return EXTENSION_LANGUAGE[extension] || "plaintext";
 }
 
+const MATERIAL_ICON_MAP = {
+  py: "python", js: "javascript", mjs: "javascript", cjs: "javascript", ts: "typescript",
+  tsx: "typescript", jsx: "react", html: "html", htm: "html", css: "css", scss: "sass",
+  less: "less", json: "json", md: "markdown", markdown: "markdown", txt: "document", csv: "document",
+  log: "log", sh: "console", bash: "console", bat: "console", cmd: "console",
+  ps1: "powershell", c: "c", h: "c", cpp: "cpp", cc: "cpp", cxx: "cpp", hpp: "cpp",
+  java: "java", go: "go", rs: "rust", php: "php", rb: "ruby", lua: "lua", swift: "swift",
+  kt: "kotlin", kts: "kotlin", r: "r", dart: "dart", pl: "perl", scala: "scala", sc: "scala",
+  sql: "database", yml: "yaml", yaml: "yaml", xml: "xml", png: "image", jpg: "image",
+  jpeg: "image", gif: "image", svg: "svg", mp4: "video", mp3: "audio", zip: "zip",
+  exe: "exe", lock: "lock", gitignore: "git", env: "tune",
+};
+
+function materialIconUrl(name) {
+  if (!name || name.endsWith("/")) return null;
+  const extension = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  const base = name.split("/").pop().toLowerCase();
+  let iconName = MATERIAL_ICON_MAP[extension];
+  if (!iconName && (base === ".gitignore" || base === ".env")) iconName = MATERIAL_ICON_MAP[base.replace(".", "")];
+  if (!iconName) return null;
+  return `https://cdn.jsdelivr.net/npm/material-icon-theme@5.40.0/icons/${iconName}.svg`;
+}
+
 function fileIcon(name) {
   if (!name) return "📄";
   const extension = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
@@ -469,6 +495,26 @@ function fileIcon(name) {
   };
   if (name.endsWith("/")) return "📁";
   return icons[extension] || "📄";
+}
+
+function renderFileIcon(container, name) {
+  container.replaceChildren();
+  if (url) {
+    const img = document.createElement("img");
+    img.className = "file-icon-img";
+    img.src = url;
+    img.alt = "";
+    img.loading = "lazy";
+    img.onerror = () => {
+      img.replaceWith(Object.assign(document.createElement("span"), { className: "file-icon", textContent: fileIcon(name) }));
+    };
+    container.append(img);
+  } else {
+    const span = document.createElement("span");
+    span.className = "file-icon";
+    span.textContent = fileIcon(name);
+    container.append(span);
+  }
 }
 
 
@@ -684,8 +730,8 @@ function renderFileList() {
     item.tabIndex = 0;
 
     const icon = document.createElement("span");
-    icon.className = "file-icon";
-    icon.textContent = fileIcon(name);
+    icon.className = "file-icon-wrap";
+    renderFileIcon(icon, name);
 
     const label = document.createElement("span");
     label.className = "name";
@@ -755,10 +801,10 @@ function renderTabs() {
     tab.tabIndex = 0;
 
     tab.innerHTML = "";
-    const icon = document.createElement("span");
-    icon.className = "file-icon";
-    icon.textContent = fileIcon(name);
-    tab.append(icon);
+    const iconWrap = document.createElement("span");
+    iconWrap.className = "file-icon-wrap";
+    renderFileIcon(iconWrap, name);
+    tab.append(iconWrap);
     const label = document.createElement("span");
     label.textContent = name;
     tab.append(label);
@@ -2733,6 +2779,20 @@ document.addEventListener("keydown", (event) => {
     quickOpen();
     return;
   }
+  // Ctrl+K M -> select language (VS Code style)
+  if (event.key.toLowerCase() === "k" && !event.shiftKey) {
+    // wait for M
+    const handler = (e) => {
+      if (e.key.toLowerCase() === "m") {
+        e.preventDefault();
+        pickLanguage();
+      }
+      document.removeEventListener("keydown", handler);
+    };
+    document.addEventListener("keydown", handler);
+    setTimeout(() => document.removeEventListener("keydown", handler), 2000);
+    return;
+  }
   if (event.key.toLowerCase() === "s" && !event.shiftKey) {
     event.preventDefault();
     scheduleSave();
@@ -2813,6 +2873,35 @@ function renderBreadcrumbs() {
   dom.breadcrumbs.textContent = state.active;
 }
 
+function populateLangPicker() {
+  if (!dom.langPicker) return;
+  dom.langPicker.replaceChildren();
+  for (const [id, def] of Object.entries(LANGUAGE_DEFS)) {
+    const option = document.createElement("option");
+    option.value = id;
+    option.textContent = def.label;
+    dom.langPicker.append(option);
+  }
+  if (state.active) dom.langPicker.value = languageFor(state.active);
+}
+
+function pickLanguage() {
+  if (!dom.langDialog || !state.active) {
+    toast("Open a file first.", "error");
+    return;
+  }
+  populateLangPicker();
+  dom.langDialog.showModal();
+}
+
+dom.langDialog?.addEventListener("close", () => {
+  if (dom.langDialog.returnValue === "ok" && state.active) {
+    state.languages[state.active] = dom.langPicker.value;
+    refreshLanguage();
+    scheduleSave();
+    toast(`Language set to ${languageLabel(dom.langPicker.value)}.`, "ok");
+  }
+});
 function openPalette() {
   if (!dom.palette) return;
   dom.paletteInput.value = "";
@@ -3081,6 +3170,7 @@ function boot() {
   renderFileList();
   renderTabs();
   populateLanguageSelect();
+  populateLangPicker();
   showPanel(state.panel);
 
   writeTerminal(
