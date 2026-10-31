@@ -536,6 +536,7 @@ function fileIcon(name) {
 
 function renderFileIcon(container, name) {
   container.replaceChildren();
+  const url = materialIconUrl(name);
   if (url) {
     const img = document.createElement("img");
     img.className = "file-icon-img";
