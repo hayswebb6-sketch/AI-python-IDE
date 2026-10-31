@@ -876,7 +876,7 @@ const LIGHT_THEME = {
 };
 
 function monacoWorker(path) {
-  const source = `self.MonacoEnvironment = { baseUrl: '${MONACO_CDN}/' };\nimportScripts('${MONACO_CDN}/${path}');`;
+  const source = `self.MonacoEnvironment = { baseUrl: '${MONACO_CDN}/' };\nimportScripts('${MONACO_CDN}/${path.replace(/^vs\//, '')}');`;
   return URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
 }
 
@@ -889,7 +889,7 @@ function loadMonaco() {
 
     const timeout = setTimeout(() => reject(new Error("Monaco timed out")), 8000);
 
-    const workerSource = `self.MonacoEnvironment = { baseUrl: '${MONACO_CDN}/' };\nimportScripts('${MONACO_CDN}/vs/base/worker/workerMain.js');`;
+    const workerSource = `self.MonacoEnvironment = { baseUrl: '${MONACO_CDN}/' };\nimportScripts('${MONACO_CDN}/base/worker/workerMain.js');`;
     const workerUrl = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
     window.MonacoEnvironment = { getWorkerUrl: () => workerUrl };
 
