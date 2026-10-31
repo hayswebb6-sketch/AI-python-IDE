@@ -835,6 +835,8 @@ function loadMonaco() {
       return;
     }
 
+    const timeout = setTimeout(() => reject(new Error("Monaco timed out")), 20000);
+
     const workers = {
       editor: monacoWorker("vs/base/worker/workerMain.js"),
       json: monacoWorker("vs/language/json/jsonWorker.js"),
@@ -854,7 +856,13 @@ function loadMonaco() {
     };
 
     window.require.config({ paths: { vs: MONACO_CDN } });
-    window.require(["vs/editor/editor.main"], () => resolve(window.monaco), reject);
+    window.require(["vs/editor/editor.main"], (monaco) => {
+      clearTimeout(timeout);
+      resolve(monaco || window.monaco);
+    }, (error) => {
+      clearTimeout(timeout);
+      reject(error || new Error("Monaco failed to load"));
+    });
   });
 }
 
