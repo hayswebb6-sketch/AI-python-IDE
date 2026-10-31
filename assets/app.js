@@ -167,7 +167,8 @@ const dom = {
   dialogCancel: $("dialog-cancel"),
 
   langDialog: $("lang-dialog"),
-  langPicker: $("lang-picker"),
+  langFilter: $("lang-filter"),
+  langList: $("lang-list"),
 
   settingsDialog: $("settings-dialog"),
   settingsForm: $("settings-form"),
@@ -3013,17 +3014,18 @@ function quickOpen() {
  * ========================================================================== */
 
 const PALETTE_COMMANDS = [
-  { label: "Run active file", run: () => runActive() },
-  { label: "Run with input…", run: () => runWithInput() },
-  { label: "New file", run: () => dom.btnNew.click() },
-  { label: "Open settings", run: () => dom.btnSettings.click() },
-  { label: "Toggle theme", run: () => { settings.theme = settings.theme === "dark" ? "light" : "dark"; saveSettings(); applySettings(); } },
-  { label: "Format document", run: () => formatDocument() },
-  { label: "Clear terminal", run: () => clearTerminal() },
-  { label: "Reset workspace", run: () => resetWorkspace() },
-  { label: "Toggle sidebar", run: () => $("btn-sidebar").click() },
-  { label: "Toggle console", run: () => dom.app.classList.toggle("console-hidden") },
-  { label: "Download active file", run: () => dom.btnExport.click() },
+  { icon: "▶", label: "Run active file", run: () => runActive() },
+  { icon: "⌨", label: "Run with input…", run: () => runWithInput() },
+  { icon: "+", label: "New file", run: () => dom.btnNew.click() },
+  { icon: "⚙", label: "Open settings", run: () => dom.btnSettings.click() },
+  { icon: "◐", label: "Toggle theme", run: () => { settings.theme = settings.theme === "dark" ? "light" : "dark"; saveSettings(); applySettings(); } },
+  { icon: "✨", label: "Format document", run: () => formatDocument() },
+  { icon: "🧹", label: "Clear terminal", run: () => clearTerminal() },
+  { icon: "↺", label: "Reset workspace", run: () => resetWorkspace() },
+  { icon: "📁", label: "Toggle sidebar", run: () => $("btn-sidebar").click() },
+  { icon: " “", label: "Toggle console", run: () => dom.app.classList.toggle("console-hidden") },
+  { icon: "⬇", label: "Download active file", run: () => dom.btnExport.click() },
+  { icon: "🌐", label: "Open language docs", run: () => { const u = LANGUAGE_DOCS[languageFor(state.active)]; if (u) window.open(u, "_blank", "noopener"); } },
 ];
 
 let paletteIndex = 0;
@@ -3039,16 +3041,36 @@ function renderBreadcrumbs() {
   dom.breadcrumbs.textContent = state.active;
 }
 
-function populateLangPicker() {
-  if (!dom.langPicker) return;
-  dom.langPicker.replaceChildren();
-  for (const [id, def] of Object.entries(LANGUAGE_DEFS)) {
-    const option = document.createElement("option");
-    option.value = id;
-    option.textContent = def.label;
-    dom.langPicker.append(option);
-  }
-  if (state.active) dom.langPicker.value = languageFor(state.active);
+let langPickerIndex = 0;
+let langPickerItems = [];
+
+function renderLangPicker(filter = "") {
+  if (!dom.langList) return;
+  const q = filter.trim().toLowerCase();
+  langPickerItems = Object.entries(LANGUAGE_DEFS)
+    .filter(([id, def]) => !q || def.label.toLowerCase().includes(q) || id.includes(q))
+    .sort((a, b) => a[1].label.localeCompare(b[1].label));
+  dom.langList.replaceChildren();
+  langPickerItems.forEach(([id, def], index) => {
+    const li = document.createElement("li");
+    li.className = `palette-item${index === langPickerIndex ? " is-active" : ""}`;
+    const icon = document.createElement("span");
+    icon.className = "palette-icon";
+    icon.textContent = "•";
+    const label = document.createElement("span");
+    label.className = "palette-label";
+    label.textContent = def.label;
+    li.append(icon, label);
+    li.addEventListener("click", () => {
+      dom.langDialog.close();
+      state.languages[state.active] = id;
+      refreshLanguage();
+      scheduleSave();
+      toast(`Language set to ${def.label}.`, "ok");
+    });
+    dom.langList.append(li);
+  });
+  if (langPickerIndex >= langPickerItems.length) langPickerIndex = Math.max(0, langPickerItems.length - 1);
 }
 
 function pickLanguage() {
@@ -3056,18 +3078,40 @@ function pickLanguage() {
     toast("Open a file first.", "error");
     return;
   }
-  populateLangPicker();
+  langPickerIndex = 0;
+  renderLangPicker("");
+  if (dom.langFilter) dom.langFilter.value = "";
   dom.langDialog.showModal();
+  dom.langFilter?.focus();
 }
 
-dom.langDialog?.addEventListener("close", () => {
-  if (dom.langDialog.returnValue === "ok" && state.active) {
-    state.languages[state.active] = dom.langPicker.value;
-    refreshLanguage();
-    scheduleSave();
-    toast(`Language set to ${languageLabel(dom.langPicker.value)}.`, "ok");
+dom.langFilter?.addEventListener("input", (event) => {
+  langPickerIndex = 0;
+  renderLangPicker(event.target.value);
+});
+dom.langFilter?.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    langPickerIndex = Math.min(langPickerItems.length - 1, langPickerIndex + 1);
+    renderLangPicker(dom.langFilter.value);
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    langPickerIndex = Math.max(0, langPickerIndex - 1);
+    renderLangPicker(dom.langFilter.value);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    const item = langPickerItems[langPickerIndex];
+    if (item) {
+      dom.langDialog.close();
+      state.languages[state.active] = item[0];
+      refreshLanguage();
+      scheduleSave();
+      toast(`Language set to ${item[1].label}.`, "ok");
+    }
   }
 });
+dom.langDialog?.addEventListener("close", () => {});
+
 function openPalette() {
   if (!dom.palette) return;
   dom.paletteInput.value = "";
@@ -3085,7 +3129,13 @@ function renderPalette(query) {
   items.forEach((command, index) => {
     const li = document.createElement("li");
     li.className = `palette-item${index === paletteIndex ? " is-active" : ""}`;
-    li.textContent = command.label;
+    const icon = document.createElement("span");
+    icon.className = "palette-icon";
+    icon.textContent = command.icon || "•";
+    const label = document.createElement("span");
+    label.className = "palette-label";
+    label.textContent = command.label;
+    li.append(icon, label);
     li.addEventListener("click", () => {
       dom.palette.close();
       command.run();
