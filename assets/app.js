@@ -1628,6 +1628,8 @@ function stopRuntime(reason = "Runtime restarted.") {
   writeTerminal(`\n${reason}`, "sys");
 }
 
+let jsRunCounter = 0;
+
 function runJavaScript(name, options = {}) {
   const quiet = Boolean(options.quiet);
   if (!state.files.has(name)) return Promise.resolve(false);
@@ -1640,17 +1642,18 @@ function runJavaScript(name, options = {}) {
   if (!quiet) writeTerminal(` node ${name}`, "cmd");
   showConsole("terminal");
 
-  if (state.jsWorker) {
-    state.jsWorker.terminate();
-    state.jsWorker = null;
-  }
-
   state.jsRunning = true;
   updateRunButtons();
-  dom.statusRuntime.textContent = "JavaScript · Web Worker";
+  dom.statusRuntime.textContent = "JavaScript · browser";
 
-  const worker = new Worker(new URL("assets/js-worker.js", document.baseURI));
-  state.jsWorker = worker;
+  const runId = ++jsRunCounter;
+  const iframe = dom.htmlPreview || document.createElement("iframe");
+  if (!dom.htmlPreview) {
+    iframe.className = "html-preview";
+    iframe.sandbox = "allow-scripts allow-modals";
+    document.body.append(iframe);
+    iframe.hidden = true;
+  }
 
   return new Promise((resolve) => {
     let finished = false;
@@ -1658,49 +1661,52 @@ function runJavaScript(name, options = {}) {
       if (finished) return;
       finished = true;
       state.jsRunning = false;
-      if (state.jsWorker === worker) state.jsWorker = null;
-      try { worker.terminate(); } catch { /* ignore */ }
       updateRunButtons();
       dom.statusRuntime.textContent = `Python ${state.pyVersion} · WebAssembly`;
+      window.removeEventListener("message", onMessage);
+      try { iframe.srcdoc = ""; } catch { /* ignore */ }
       resolve(Boolean(ok));
     };
 
-    worker.onmessage = ({ data }) => {
-      switch (data.type) {
-        case "stdout":
-          writeTerminal(data.text, "");
+    const onMessage = (event) => {
+      if (!event.data || event.data.runId !== runId) return;
+      switch (event.data.type) {
+        case "stdout": writeTerminal(event.data.text, ""); break;
+        case "stderr": writeTerminal(event.data.text, "err"); break;
+        case "done":
+          const seconds = ((event.data.ms || 0) / 1000).toFixed(2);
+          writeTerminal(event.data.ok ? `Process finished in ${seconds}s` : `Process exited with errors after ${seconds}s`, event.data.ok ? "ok" : "err");
+          finish(event.data.ok);
           break;
-        case "stderr":
-          writeTerminal(data.text, "err");
-          break;
-        case "result":
-          writeTerminal(data.text, "ok");
-          break;
-        case "clear":
-          clearTerminal();
-          break;
-        case "done": {
-          const seconds = ((data.ms || 0) / 1000).toFixed(2);
-          writeTerminal(
-            data.ok
-              ? `Process finished in ${seconds}s`
-              : `Process exited with errors after ${seconds}s`,
-            data.ok ? "ok" : "err"
-          );
-          finish(data.ok);
-          break;
-        }
-        default:
-          break;
+        default: break;
       }
     };
+    window.addEventListener("message", onMessage);
 
-    worker.onerror = (event) => {
-      writeTerminal(`JavaScript worker error: ${event.message || "unknown"}`, "err");
-      finish(false);
-    };
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>
+(function() {
+  const runId = ${runId};
+  const send = (type, text, ms, ok) => parent.postMessage({ runId, type, text, ms, ok }, "*");
+  const fmt = (v) => (v === null ? "null" : v === undefined ? "undefined" : (typeof v === "object" ? JSON.stringify(v) : String(v)));
+  const origLog = console.log, origWarn = console.warn, origErr = console.error;
+  console.log = (...a) => send("stdout", a.map(fmt).join(" ") + "\\n");
+  console.warn = (...a) => send("stderr", a.map(fmt).join(" ") + "\\n");
+  console.error = (...a) => send("stderr", a.map(fmt).join(" ") + "\\n");
+  const started = performance.now();
+  window.onerror = (msg, src, line, col, err) => { send("stderr", (err && err.stack) ? err.stack + "\\n" : String(msg) + "\\n"); return true; };
+  (async () => {
+    try {
+      ${code}
+      send("done", null, performance.now() - started, true);
+    } catch (e) {
+      send("stderr", (e && e.stack) ? e.stack + "\\n" : String(e) + "\\n");
+      send("done", null, performance.now() - started, false);
+    }
+  })();
+})();
+<\/script></body></html>`;
 
-    worker.postMessage({ type: "run", code, filename: name });
+    iframe.srcdoc = html;
   });
 }
 
