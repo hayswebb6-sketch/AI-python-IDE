@@ -2919,6 +2919,13 @@ function boot() {
   applySettings();
   refreshPrompt();
   initEditor();
+  setTimeout(() => {
+    if (!state.editor) {
+      dom.editorLoading.hidden = true;
+      initFallbackEditor();
+      toast("Editor CDN unavailable — using the basic editor.", "error");
+    }
+  }, 4000);
   state.runtime = "idle";
   dom.runtime.dataset.state = "idle";
   dom.runtimeText.textContent = "Python runtime � runs on demand";
