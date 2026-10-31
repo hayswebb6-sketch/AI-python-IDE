@@ -1653,6 +1653,8 @@ function runJavaScript(name, options = {}) {
     iframe.sandbox = "allow-scripts allow-modals";
     document.body.append(iframe);
     iframe.hidden = true;
+  } else {
+    iframe.sandbox = "allow-scripts allow-modals";
   }
 
   return new Promise((resolve) => {
