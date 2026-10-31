@@ -2620,31 +2620,86 @@ document.addEventListener("keydown", (event) => {
   const mod = event.ctrlKey || event.metaKey;
   if (!mod) {
     if (event.key === "Escape") closeMenus();
+    if (event.key === "F2" && state.active) {
+      event.preventDefault();
+      renameFile(state.active);
+    }
     return;
   }
 
-  // Monaco handles Ctrl+Enter itself when focused; this covers the rest of the app.
+  if (event.key.toLowerCase() === "n" && !event.shiftKey) {
+    event.preventDefault();
+    (async () => {
+      const name = await askText({ title: "New file", label: "File name", value: "untitled.txt", confirm: "Create" });
+      if (name === null) return;
+      createFile(name.trim(), "");
+    })();
+    return;
+  }
+  if (event.key.toLowerCase() === "w" && !event.shiftKey) {
+    event.preventDefault();
+    if (state.active) closeTab(state.active);
+    return;
+  }
+  if (event.key === "Tab") {
+    event.preventDefault();
+    if (!state.openTabs.length) return;
+    const delta = event.shiftKey ? -1 : 1;
+    const index = state.openTabs.indexOf(state.active);
+    const next = (index + delta + state.openTabs.length) % state.openTabs.length;
+    const name = state.openTabs[next];
+    if (name) edgeActivate(name);
+    return;
+  }
+  if (event.key.toLowerCase() === "p" && !event.shiftKey) {
+    event.preventDefault();
+    quickOpen();
+    return;
+  }
+  if (event.key.toLowerCase() === "s" && !event.shiftKey) {
+    event.preventDefault();
+    scheduleSave();
+    toast("Workspace saved in this browser.", "ok");
+    return;
+  }
+  if (event.key.toLowerCase() === "b" && !event.shiftKey) {
+    event.preventDefault();
+    $("btn-sidebar").click();
+    return;
+  }
+  if (event.key === "`") {
+    event.preventDefault();
+    dom.app.classList.toggle("console-hidden");
+    return;
+  }
+  if (event.key === "," && !event.shiftKey) {
+    event.preventDefault();
+    dom.btnSettings?.click();
+    return;
+  }
+  if (event.key.toLowerCase() === "p" && event.shiftKey) {
+    event.preventDefault();
+    openPalette();
+    return;
+  }
+
   if (event.key === "Enter" && !event.shiftKey && !event.target.closest(".monaco-editor")) {
     event.preventDefault();
     runActive();
   } else if (event.key === "Enter" && event.shiftKey && !event.target.closest(".monaco-editor")) {
     event.preventDefault();
     runWithInput();
-  } else if (event.key.toLowerCase() === "s") {
-    event.preventDefault();
-    scheduleSave();
-    toast("Workspace saved in this browser.", "ok");
-  } else if (event.key.toLowerCase() === "b") {
-    event.preventDefault();
-    $("btn-sidebar").click();
-  } else if (event.key === ",") {
-    event.preventDefault();
-    dom.btnSettings?.click();
-  } else if (event.key === "`") {
-    event.preventDefault();
-    dom.app.classList.toggle("console-hidden");
   }
 });
+
+function quickOpen() {
+  const name = window.prompt("Open file:\n" + [...state.files.keys()].join("\n"));
+  if (!name) return;
+  const trimmed = name.trim();
+  if (state.files.has(trimmed)) openFile(trimmed);
+  else toast(`${trimmed}: no such file`, "error");
+}
+
 
 /* ==========================================================================
  * Boot
