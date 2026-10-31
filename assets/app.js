@@ -77,7 +77,26 @@ const TEMPLATES = {
  * DOM
  * ========================================================================== */
 
-const $ = (id) => document.getElementById(id);
+const debugLog = [];
+function dbg(message, data) {
+  const entry = { t: new Date().toISOString(), message, data: data ?? null };
+  debugLog.push(entry);
+  if (debugLog.length > 120) debugLog.shift();
+  try { console.log("[pyide]", message, data ?? ""); } catch { /* ignore */ }
+}
+window.__pyideDebug = {
+  log: debugLog,
+  snapshot: () => ({
+    active: state.active,
+    runtime: state.runtime,
+    jsRunning: state.jsRunning,
+    files: [...state.files.keys()],
+    openTabs: state.openTabs,
+    settings,
+    userAgent: navigator.userAgent,
+  }),
+};
+
 
 const dom = {
   app: $("app"),
@@ -972,6 +991,7 @@ async function initEditor() {
   } catch (error) {
     dom.editorLoading.hidden = true;
     initFallbackEditor();
+    dbg("editor load failed", error?.message || String(error));
     toast("Editor CDN unavailable — using the basic editor.", "error");
     console.error(error);
   }
@@ -1419,6 +1439,7 @@ function startWorker() {
   state.worker.addEventListener("message", onWorkerMessage);
   state.worker.addEventListener("error", (event) => {
     setRuntime("error", "Runtime crashed");
+    dbg("worker error", event.message);
     writeTerminal(`Runtime error: ${event.message || "unknown"}`, "err");
   });
 
@@ -1535,6 +1556,7 @@ function onWorkerMessage({ data }) {
     }
 
     case "fatal":
+      dbg("worker fatal", data.text);
       writeTerminal(data.text || "Fatal runtime error", "err");
       break;
 
@@ -2577,6 +2599,22 @@ $("settings-reset")?.addEventListener("click", () => {
   syncSettingsForm();
   toast("Settings reset", "ok");
 });
+$("btn-copy-debug")?.addEventListener("click", () => {
+  const info = JSON.stringify({ snapshot: window.__pyideDebug.snapshot(), log: window.__pyideDebug.log }, null, 2);
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    navigator.clipboard.writeText(info).then(() => toast("Debug info copied.", "ok")).catch(() => toast("Copy failed.", "error"));
+  } else {
+    const ta = document.createElement("textarea");
+    ta.value = info;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.append(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+    toast("Debug info copied.", "ok");
+  }
+});
 dom.statusLanguage?.addEventListener("change", () => {
   if (!state.active) return;
   state.languages[state.active] = dom.statusLanguage.value;
@@ -2842,6 +2880,7 @@ renderBreadcrumbs();
 
 
 function boot() {
+  dbg("boot");
   loadSettings();
   restoreWorkspace();
   applyConsoleHeight(state.consoleHeight);
