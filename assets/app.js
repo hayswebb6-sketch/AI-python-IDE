@@ -948,6 +948,7 @@ function syncEditor() {
 }
 
 async function initEditor() {
+  dbg("initEditor start");
   try {
     const monaco = await loadMonaco();
     state.monaco = monaco;
@@ -2920,12 +2921,13 @@ function boot() {
   refreshPrompt();
   initEditor();
   setTimeout(() => {
+    dbg("editor fallback timer fired", { hasEditor: !!state.editor });
     if (!state.editor) {
       dom.editorLoading.hidden = true;
       initFallbackEditor();
       toast("Editor CDN unavailable — using the basic editor.", "error");
     }
-  }, 4000);
+  }, 2000);
   state.runtime = "idle";
   dom.runtime.dataset.state = "idle";
   dom.runtimeText.textContent = "Python runtime � runs on demand";
