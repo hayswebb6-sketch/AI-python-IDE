@@ -366,12 +366,12 @@ const LANGUAGE_DEFS = {
   rust: { label: "Rust", short: "rs", runnable: false },
   java: { label: "Java", short: "java", runnable: false },
   csharp: { label: "C#", short: "cs", runnable: false },
-  sql: { label: "SQL", short: "sql", runnable: false },
+  sql: { label: "SQL", short: "sql", runnable: true },
   yaml: { label: "YAML", short: "yml", runnable: false },
   xml: { label: "XML", short: "xml", runnable: false },
   php: { label: "PHP", short: "php", runnable: false },
   ruby: { label: "Ruby", short: "rb", runnable: false },
-  lua: { label: "Lua", short: "lua", runnable: false },
+  lua: { label: "Lua", short: "lua", runnable: true },
   swift: { label: "Swift", short: "swift", runnable: false },
   kotlin: { label: "Kotlin", short: "kt", runnable: false },
   r: { label: "R", short: "r", runnable: false },
@@ -2370,6 +2370,60 @@ function snapshotActive() {
   }
 }
 
+async function runSqlFile(name) {
+  if (!state.files.has(name)) return;
+  const code = state.files.get(name) ?? "";
+  writeTerminal(` sql ${name}`, "cmd");
+  showConsole("terminal");
+
+  const worker = new Worker(new URL("assets/sql-worker.js", document.baseURI));
+  worker.onmessage = ({ data }) => {
+    switch (data.type) {
+      case "stdout": writeTerminal(data.text, ""); break;
+      case "stderr": writeTerminal(data.text, "err"); break;
+      case "done": {
+        const seconds = ((data.ms || 0) / 1000).toFixed(2);
+        writeTerminal(data.ok ? `Query finished in ${seconds}s` : `Query failed after ${seconds}s`, data.ok ? "ok" : "err");
+        worker.terminate();
+        break;
+      }
+      default: break;
+    }
+  };
+  worker.onerror = (event) => {
+    writeTerminal(`SQL worker error: ${event.message || "unknown"}`, "err");
+    worker.terminate();
+  };
+  worker.postMessage({ type: "run", code });
+}
+
+async function runLuaFile(name) {
+  if (!state.files.has(name)) return;
+  const code = state.files.get(name) ?? "";
+  writeTerminal(` lua ${name}`, "cmd");
+  showConsole("terminal");
+
+  const worker = new Worker(new URL("assets/lua-worker.js", document.baseURI));
+  worker.onmessage = ({ data }) => {
+    switch (data.type) {
+      case "stdout": writeTerminal(data.text, ""); break;
+      case "stderr": writeTerminal(data.text, "err"); break;
+      case "done": {
+        const seconds = ((data.ms || 0) / 1000).toFixed(2);
+        writeTerminal(data.ok ? `Process finished in ${seconds}s` : `Process exited with errors after ${seconds}s`, data.ok ? "ok" : "err");
+        worker.terminate();
+        break;
+      }
+      default: break;
+    }
+  };
+  worker.onerror = (event) => {
+    writeTerminal(`Lua worker error: ${event.message || "unknown"}`, "err");
+    worker.terminate();
+  };
+  worker.postMessage({ type: "run", code });
+}
+
 function runActive() {
   if (!state.active) {
     toast("Open a file first.", "error");
@@ -2384,6 +2438,10 @@ function runActive() {
       return;
     }
     runJavaScript(state.active);
+  } else if (language === "lua") {
+    runLuaFile(state.active);
+  } else if (language === "sql") {
+    runSqlFile(state.active);
   } else if (language === "shell" || language === "batch") {
     runShellFile(state.active);
   } else if (language === "html") {
