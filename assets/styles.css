@@ -288,3 +288,16 @@ html[data-theme="light"] .topbar { background: linear-gradient(180deg, #ffffff, 
 
 .file-icon-wrap { display: inline-flex; align-items: center; width: 16px; height: 16px; flex: 0 0 auto; }
 .file-icon-img { width: 16px; height: 16px; }
+
+.status-select {
+  min-width: 110px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.status-select:hover { border-color: var(--border-strong); }
+.status-select:focus { outline: none; box-shadow: var(--ring); }

@@ -116,6 +116,7 @@ const dom = {
   statusRuntime: $("status-runtime"),
   statusCursor: $("status-cursor"),
   statusLanguage: $("status-language"),
+  btnDocs: $("btn-docs"),
   statusIndent: $("status-indent"),
 
   sidebar: $("sidebar"),
@@ -361,6 +362,47 @@ document.addEventListener("click", (event) => {
  * Languages
  * ========================================================================== */
 
+const LANGUAGE_DOCS = {
+  python: "https://docs.python.org/3/",
+  javascript: "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
+  typescript: "https://www.typescriptlang.org/docs/",
+  html: "https://developer.mozilla.org/en-US/docs/Web/HTML",
+  css: "https://developer.mozilla.org/en-US/docs/Web/CSS",
+  json: "https://www.json.org/json-en.html",
+  markdown: "https://www.markdownguide.org/",
+  shell: "https://www.gnu.org/software/bash/manual/",
+  powershell: "https://learn.microsoft.com/en-us/powershell/",
+  batch: "https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/windows-commands",
+  c: "https://en.cppreference.com/w/c",
+  cpp: "https://en.cppreference.com/w/cpp",
+  java: "https://docs.oracle.com/en/java/",
+  go: "https://go.dev/doc/",
+  rust: "https://doc.rust-lang.org/",
+  sql: "https://www.sqlite.org/docs.html",
+  lua: "https://www.lua.org/manual/5.4/",
+  swift: "https://docs.swift.org/swift-book/",
+  kotlin: "https://kotlinlang.org/docs/home.html",
+  r: "https://cran.r-project.org/manuals.html",
+  dart: "https://dart.dev/guides",
+  perl: "https://perldoc.perl.org/",
+  scala: "https://docs.scala-lang.org/",
+  julia: "https://docs.julialang.org/",
+  fsharp: "https://learn.microsoft.com/en-us/dotnet/fsharp/",
+  clojure: "https://clojure.org/guides",
+  "objective-c": "https://developer.apple.com/documentation/objectivec",
+  pascal: "https://www.freepascal.org/docs.html",
+  coffeescript: "https://coffeescript.org/",
+  scss: "https://sass-lang.com/documentation/",
+  less: "https://lesscss.org/",
+  dockerfile: "https://docs.docker.com/reference/dockerfile/",
+  graphql: "https://graphql.org/learn/",
+  proto: "https://protobuf.dev/",
+  hcl: "https://developer.hashicorp.com/terraform/language",
+  ini: "https://en.wikipedia.org/wiki/INI_file",
+  vb: "https://learn.microsoft.com/en-us/dotnet/visual-basic/",
+  abap: "https://help.sap.com/docs/abap",
+  typescript: "https://www.typescriptlang.org/docs/",
+};
 const LANGUAGE_DEFS = {
   go: { label: "Go", short: "go", runnable: false },
   rust: { label: "Rust", short: "rs", runnable: false },
@@ -2802,6 +2844,12 @@ dom.statusLanguage?.addEventListener("change", () => {
   refreshLanguage();
   scheduleSave();
 });
+dom.btnDocs?.addEventListener("click", () => {
+  const language = languageFor(state.active);
+  const url = LANGUAGE_DOCS[language];
+  if (url) window.open(url, "_blank", "noopener");
+  else toast("No documentation link for this language.", "error");
+});
 dom.btnStop.addEventListener("click", () => {
   if (state.jsRunning && state.jsWorker) {
     state.jsWorker.terminate();
@@ -2870,9 +2918,9 @@ document.addEventListener("keydown", (event) => {
     if (name) edgeActivate(name);
     return;
   }
-  if (event.key.toLowerCase() === "p" && !event.shiftKey) {
+  if (event.key.toLowerCase() === "m" && event.shiftKey) {
     event.preventDefault();
-    quickOpen();
+    pickLanguage();
     return;
   }
   // Ctrl+K M -> select language (VS Code style)
