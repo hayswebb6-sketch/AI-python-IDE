@@ -1642,12 +1642,10 @@ function runJavaScript(name, options = {}) {
   if (!quiet) writeTerminal(` node ${name}`, "cmd");
   showConsole("terminal");
 
+  const runId = ++jsRunCounter;
   state.jsRunning = true;
   updateRunButtons();
   dom.statusRuntime.textContent = "JavaScript · browser";
-
-  const runId = ++jsRunCounter;
-  const iframe = dom.htmlPreview || document.createElement("iframe");
   if (!dom.htmlPreview) {
     iframe.className = "html-preview";
     iframe.sandbox = "allow-scripts allow-modals";
@@ -1685,7 +1683,7 @@ function runJavaScript(name, options = {}) {
     };
     window.addEventListener("message", onMessage);
 
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:system-ui;margin:16px;background:#0c111b;color:#dbe3f4;}</style></head><body><script>
 (function() {
   const runId = ${runId};
   const send = (type, text, ms, ok) => parent.postMessage({ runId, type, text, ms, ok }, "*");
@@ -1709,6 +1707,8 @@ function runJavaScript(name, options = {}) {
 <\/script></body></html>`;
 
     iframe.srcdoc = html;
+    iframe.hidden = false;
+    toast("JS preview updated — see the Window tab.", "ok");
   });
 }
 
