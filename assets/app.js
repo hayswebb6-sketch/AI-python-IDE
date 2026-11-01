@@ -17,7 +17,7 @@ const STORAGE_KEY = "pyide.workspace.v2";
 const SETTINGS_KEY = "pyide.settings.v1";
 const SHELL_HISTORY_KEY = "pyide.shell.history.v1";
 const SHELL_DIRS_KEY = "pyide.shell.dirs.v1";
-const PYODIDE_VERSION = "314.0.7";
+const PYODIDE_VERSION = "0.26.4";
 
 /* ==========================================================================
  * Settings
