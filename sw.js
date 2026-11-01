@@ -1,16 +1,16 @@
 /* Python IDE — offline cache */
-const APP_VERSION = "v22";
+const APP_VERSION = "v23";
 const CACHE_NAME = `pyide-${APP_VERSION}`;
 const PRECACHE = [
   "/",
   "/index.html",
-  "/assets/app.js?v=22",
-  "/assets/styles.css?v=22",
-  "/assets/shell.js?v=22",
-  "/assets/completions.js?v=22",
-  "/assets/js-worker.js?v=22",
-  "/assets/worker.js?v=22",
-  "/assets/shims.py?v=22",
+  "/assets/app.js?v=23",
+  "/assets/styles.css?v=23",
+  "/assets/shell.js?v=23",
+  "/assets/completions.js?v=23",
+  "/assets/js-worker.js?v=23",
+  "/assets/worker.js?v=23",
+  "/assets/shims.py?v=23",
 ];
 
 self.addEventListener("install", (event) => {

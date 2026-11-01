@@ -198,7 +198,7 @@ const state = {
   snapshots: new Map(),      // name -> source at last run (for "stale" dots)
   runtime: "loading",
   panel: "terminal",
-  consoleHeight: 300,
+  consoleHeight: Math.min(320, Math.max(160, Math.round(window.innerHeight * 0.4))),
   pyVersion: "3.14.0",
   monaco: null,
   editor: null,
@@ -404,6 +404,1201 @@ const LANGUAGE_DOCS = {
   abap: "https://help.sap.com/docs/abap",
   typescript: "https://www.typescriptlang.org/docs/",
 };
+const LANGUAGE_DEFS = {
+  go: { label: "Go", short: "go", runnable: false },
+  rust: { label: "Rust", short: "rs", runnable: false },
+  java: { label: "Java", short: "java", runnable: false },
+  csharp: { label: "C#", short: "cs", runnable: false },
+  sql: { label: "SQL", short: "sql", runnable: true },
+  yaml: { label: "YAML", short: "yml", runnable: false },
+  xml: { label: "XML", short: "xml", runnable: false },
+  php: { label: "PHP", short: "php", runnable: false },
+  ruby: { label: "Ruby", short: "rb", runnable: false },
+  lua: { label: "Lua", short: "lua", runnable: true },
+  swift: { label: "Swift", short: "swift", runnable: false },
+  kotlin: { label: "Kotlin", short: "kt", runnable: false },
+  r: { label: "R", short: "r", runnable: false },
+  dart: { label: "Dart", short: "dart", runnable: false },
+  perl: { label: "Perl", short: "pl", runnable: false },
+  scala: { label: "Scala", short: "scala", runnable: false },
+  julia: { label: "Julia", short: "jl", runnable: false },
+  fsharp: { label: "F#", short: "fs", runnable: false },
+  clojure: { label: "Clojure", short: "clj", runnable: false },
+  "objective-c": { label: "Objective-C", short: "m", runnable: false },
+  pascal: { label: "Pascal", short: "pas", runnable: false },
+  coffeescript: { label: "CoffeeScript", short: "coffee", runnable: false },
+  scss: { label: "SCSS", short: "scss", runnable: false },
+  less: { label: "Less", short: "less", runnable: false },
+  dockerfile: { label: "Dockerfile", short: "dockerfile", runnable: false },
+  graphql: { label: "GraphQL", short: "graphql", runnable: false },
+  proto: { label: "Protocol Buffers", short: "proto", runnable: false },
+  hcl: { label: "HCL/Terraform", short: "tf", runnable: false },
+  ini: { label: "INI/Config", short: "ini", runnable: false },
+  vb: { label: "Visual Basic", short: "vb", runnable: false },
+  abap: { label: "ABAP", short: "abap", runnable: false },
+  batch: { label: "Batch", short: "bat", runnable: false },
+  c: { label: "C", short: "c", runnable: false },
+  cpp: { label: "C++", short: "cpp", runnable: false },
+  python: { label: "Python", short: "py", runnable: true },
+  javascript: { label: "JavaScript", short: "js", runnable: true },
+  typescript: { label: "TypeScript", short: "ts", runnable: false },
+  html: { label: "HTML", short: "html", runnable: false },
+  css: { label: "CSS", short: "css", runnable: false },
+  json: { label: "JSON", short: "json", runnable: false },
+  markdown: { label: "Markdown", short: "md", runnable: false },
+  shell: { label: "Shell", short: "sh", runnable: false },
+  powershell: { label: "PowerShell", short: "ps1", runnable: false },
+  plaintext: { label: "Plain Text", short: "txt", runnable: false },
+};
+
+const EXTENSION_LANGUAGE = {
+  go: "go",
+  rs: "rust",
+  java: "java",
+  cs: "csharp",
+  sql: "sql",
+  yml: "yaml",
+  yaml: "yaml",
+  xml: "xml",
+  php: "php",
+  rb: "ruby",
+  lua: "lua",
+  swift: "swift",
+  kt: "kotlin",
+  kts: "kotlin",
+  r: "r",
+  dart: "dart",
+  pl: "perl",
+  scala: "scala",
+  sc: "scala",
+  jl: "julia",
+  fs: "fsharp",
+  fsx: "fsharp",
+  clj: "clojure",
+  cljs: "clojure",
+  m: "objective-c",
+  pas: "pascal",
+  coffee: "coffeescript",
+  scss: "scss",
+  less: "less",
+  dockerfile: "dockerfile",
+  graphql: "graphql", gql: "graphql",
+  proto: "proto",
+  tf: "hcl", tfvars: "hcl",
+  ini: "ini", toml: "ini", cfg: "ini", conf: "ini",
+  vb: "vb",
+  abap: "abap",
+  bat: "batch",
+  cmd: "batch",
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  cc: "cpp",
+  cxx: "cpp",
+  hpp: "cpp",
+  hh: "cpp",
+  py: "python",
+  pyw: "python",
+  js: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  jsx: "javascript",
+  ts: "typescript",
+  tsx: "typescript",
+  html: "html",
+  htm: "html",
+  css: "css",
+  json: "json",
+  md: "markdown",
+  markdown: "markdown",
+  sh: "shell",
+  bash: "shell",
+  ps1: "powershell",
+  psm1: "powershell",
+  txt: "plaintext",
+  csv: "plaintext",
+  log: "plaintext",
+  yml: "plaintext",
+  yaml: "plaintext",
+  toml: "plaintext",
+};
+
+function languageFor(name) {
+  if (!name) return "plaintext";
+  if (state.languages[name]) return state.languages[name];
+  const extension = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  return EXTENSION_LANGUAGE[extension] || "plaintext";
+}
+
+const MATERIAL_ICON_MAP = {
+  py: "python", js: "javascript", mjs: "javascript", cjs: "javascript", ts: "typescript",
+  tsx: "typescript", jsx: "react", html: "html", htm: "html", css: "css", scss: "sass",
+  less: "less", json: "json", md: "markdown", markdown: "markdown", txt: "document", csv: "document",
+  log: "log", sh: "console", bash: "console", bat: "console", cmd: "console",
+  ps1: "powershell", c: "c", h: "c", cpp: "cpp", cc: "cpp", cxx: "cpp", hpp: "cpp",
+  java: "java", go: "go", rs: "rust", php: "php", rb: "ruby", lua: "lua", swift: "swift",
+  kt: "kotlin", kts: "kotlin", r: "r", dart: "dart", pl: "perl", scala: "scala", sc: "scala",
+  sql: "database", yml: "yaml", yaml: "yaml", xml: "xml", png: "image", jpg: "image",
+  jpeg: "image", gif: "image", svg: "svg", mp4: "video", mp3: "audio", zip: "zip",
+  exe: "exe", lock: "lock", gitignore: "git", env: "tune",
+  jl: "julia", fs: "fsharp", fsx: "fsharp", clj: "clojure", cljs: "clojure",
+  m: "objectivec", pas: "pascal", coffee: "coffeescript", scss: "sass", less: "less",
+  dockerfile: "docker", graphql: "graphql", gql: "graphql", proto: "proto",
+  tf: "terraform", tfvars: "terraform", ini: "settings", toml: "settings", cfg: "settings", conf: "settings",
+  vb: "visualstudio", abap: "abap",
+};
+
+function materialIconUrl(name) {
+  if (!name || name.endsWith("/")) return null;
+  const extension = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  const base = name.split("/").pop().toLowerCase();
+  let iconName = MATERIAL_ICON_MAP[extension];
+  if (!iconName && (base === ".gitignore" || base === ".env")) iconName = MATERIAL_ICON_MAP[base.replace(".", "")];
+  if (!iconName) return null;
+  return `https://cdn.jsdelivr.net/npm/material-icon-theme@5.40.0/icons/${iconName}.svg`;
+}
+
+function fileIcon(name) {
+  if (!name) return "📄";
+  const extension = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  const icons = {
+    py: "🐍", js: "📜", mjs: "📜", cjs: "📜", ts: "🔷", tsx: "🔷", jsx: "📜",
+    html: "🌐", htm: "🌐", css: "🎨", scss: "🎨", less: "🎨",
+    json: "📋", md: "📝", markdown: "📝", txt: "📄", csv: "📊", log: "📄",
+    sh: "⚙️", bash: "⚙️", bat: "⚙️", cmd: "⚙️", ps1: "🔷",
+    c: "🔧", h: "🔧", cpp: "🔧", cc: "🔧", cxx: "🔧", hpp: "🔧",
+    java: "☕", go: "🐹", rs: "🦀", php: "🐘", rb: "💎", lua: "🌙",
+    swift: "🍎", kt: "🟣", kts: "🟣", r: "📊", dart: "🎯", pl: "🐪",
+    scala: "🔴", sql: "🗄️", yml: "⚙️", yaml: "⚙️", xml: "📰",
+    png: "🖼️", jpg: "🖼️", jpeg: "🖼️", gif: "🖼️", svg: "🖼️",
+    mp4: "🎬", mp3: "🎵", zip: "📦", exe: "⚙️",
+  };
+  if (name.endsWith("/")) return "📁";
+  return icons[extension] || "📄";
+}
+
+function renderFileIcon(container, name) {
+  container.replaceChildren();
+  const url = materialIconUrl(name);
+  if (url) {
+    const img = document.createElement("img");
+    img.className = "file-icon-img";
+    img.src = url;
+    img.alt = "";
+    img.loading = "lazy";
+    img.onerror = () => {
+      img.replaceWith(Object.assign(document.createElement("span"), { className: "file-icon", textContent: fileIcon(name) }));
+    };
+    container.append(img);
+  } else {
+    const span = document.createElement("span");
+    span.className = "file-icon";
+    span.textContent = fileIcon(name);
+    container.append(span);
+  }
+}
+
+
+function updateStatusLanguage() {
+  if (!dom.statusLanguage) return;
+  const language = languageFor(state.active);
+  dom.statusLanguage.value = language;
+  dom.statusLanguage.disabled = !state.active;
+  if (dom.statusIndent) dom.statusIndent.textContent = `Spaces: ${settings.tabSize}`;
+}
+
+function refreshLanguage() {
+  updateStatusLanguage();
+  const name = state.active;
+  const monaco = state.monaco;
+  const model = name ? state.models.get(name) : null;
+  if (monaco && model && !model.isDisposed()) {
+    const language = languageFor(name);
+    if (model.getLanguageId() !== language) monaco.editor.setModelLanguage(model, language);
+  }
+  updateHtmlPreviewVisibility();
+}
+
+let htmlPreviewTimer = 0;
+function updateHtmlPreviewVisibility() {
+  if (!dom.htmlPreview || !dom.tkStage) return;
+  const isHtml = !!state.active && languageFor(state.active) === "html";
+  dom.htmlPreview.hidden = !isHtml;
+  dom.tkStage.hidden = isHtml;
+  if (isHtml) scheduleHtmlPreview();
+}
+
+function scheduleHtmlPreview() {
+  clearTimeout(htmlPreviewTimer);
+  htmlPreviewTimer = setTimeout(renderHtmlPreview, 300);
+}
+
+function renderHtmlPreview() {
+  if (!dom.htmlPreview) return;
+  const code = state.active ? (state.editor && !state.editor.fallback ? state.editor.getValue() : state.files.get(state.active) ?? "") : "";
+  dom.htmlPreview.srcdoc = code;
+}
+
+/* ==========================================================================
+ * Files
+ * ========================================================================== */
+
+const RESERVED = /[\\:*?"<>|]/;
+
+function validFileName(name) {
+  if (!name || name.length > 120) return "Enter a name.";
+  if (RESERVED.test(name)) return 'Names cannot contain \\ : * ? " < > |';
+  if (name.split("/").some((part) => part === ".." || part === ".")) return "That path is not allowed.";
+  if (name.endsWith("/")) return "Names must end with a file extension.";
+  return "";
+}
+
+function createFile(name, content = "") {
+  const error = validFileName(name);
+  if (error) {
+    toast(error, "error");
+    return null;
+  }
+  if (state.files.has(name)) {
+    toast(`“${name}” already exists.`, "error");
+    openFile(name);
+    return null;
+  }
+  state.files.set(name, content);
+  scheduleSave();
+  renderFileList();
+  openFile(name);
+  return name;
+}
+
+function deleteFile(name) {
+  if (!window.confirm(`Delete “${name}”? This cannot be undone.`)) return;
+  state.files.delete(name);
+  state.snapshots.delete(name);
+  const model = state.models.get(name);
+  if (model) model.dispose();
+  state.models.delete(name);
+  state.views.delete(name);
+  state.openTabs = state.openTabs.filter((item) => item !== name);
+
+  if (state.active === name) {
+    state.active = state.openTabs[0] || null;
+  }
+  scheduleSave();
+  renderFileList();
+  renderTabs();
+  syncEditor();
+  toast(`Deleted ${name}`);
+}
+
+async function renameFile(name) {
+  const next = await askText({
+    title: "Rename file",
+    label: "New name",
+    value: name,
+    confirm: "Rename",
+  });
+  if (next === null || next === name) return;
+  const error = validFileName(next);
+  if (error) return toast(error, "error");
+  if (state.files.has(next)) return toast("That name is already in use.", "error");
+
+  const content = state.files.get(name) ?? "";
+  state.files.delete(name);
+  state.files.set(next, content);
+
+  if (state.snapshots.has(name)) {
+    state.snapshots.set(next, state.snapshots.get(name));
+    state.snapshots.delete(name);
+  }
+
+  const model = state.models.get(name);
+  if (model) model.dispose();
+  state.models.delete(name);
+  state.views.delete(name);
+
+  state.openTabs = state.openTabs.map((item) => (item === name ? next : item));
+  if (state.active === name) state.active = next;
+
+  scheduleSave();
+  renderFileList();
+  renderTabs();
+  syncEditor();
+  toast(`Renamed to ${next}`, "ok");
+}
+
+function resetWorkspace() {
+  if (!window.confirm("Restore the starter workspace? Your current files will be replaced.")) {
+    writeTerminal("reset cancelled", "sys");
+    return false;
+  }
+
+  for (const model of state.models.values()) {
+    try { model.dispose(); } catch { /* noop */ }
+  }
+  state.models.clear();
+  state.views.clear();
+  state.snapshots.clear();
+  state.files.clear();
+  state.dirs.clear();
+  state.languages = {};
+  state.openTabs = [];
+  state.active = null;
+  renderFileList();
+  renderTabs();
+  syncEditor();
+  refreshLanguage();
+  updateRunButtons();
+  scheduleSave();
+  try { localStorage.removeItem(SHELL_DIRS_KEY); } catch { /* ignore */ }
+  writeTerminal("workspace restored", "ok");
+  return true;
+}
+
+function openFile(name) {
+  if (!state.files.has(name)) return;
+  if (!state.openTabs.includes(name)) state.openTabs.push(name);
+  edgeActivate(name);
+}
+
+function edgeActivate(name) {
+  state.active = name;
+  renderTabs();
+  renderFileList();
+  syncEditor();
+  refreshLanguage();
+  updateRunButtons();
+  renderBreadcrumbs();
+  scheduleSave();
+}
+
+function closeTab(name) {
+  state.openTabs = state.openTabs.filter((item) => item !== name);
+  if (state.active === name) {
+    state.active = state.openTabs[state.openTabs.length - 1] || null;
+  }
+  renderTabs();
+  renderFileList();
+  syncEditor();
+  scheduleSave();
+}
+
+function isStale(name) {
+  const snapshot = state.snapshots.get(name);
+  if (snapshot === undefined) return false;
+  return (state.files.get(name) ?? "") !== snapshot;
+}
+
+function renderFileList() {
+  dom.fileList.replaceChildren();
+
+  if (!state.files.size) {
+    const empty = document.createElement("li");
+    empty.className = "file-empty";
+    empty.innerHTML = 'No files yet.<br>Use <code>+</code> to create one.';
+    dom.fileList.append(empty);
+    return;
+  }
+
+  const names = [...state.files.keys()].sort((a, b) => a.localeCompare(b));
+
+  for (const name of names) {
+    const item = document.createElement("li");
+    item.className = `file-item${name === state.active ? " is-active" : ""} lang-${languageFor(name)}`;
+    item.dataset.name = name;
+    item.setAttribute("role", "option");
+    item.setAttribute("aria-selected", String(name === state.active));
+    item.tabIndex = 0;
+
+    const icon = document.createElement("span");
+    icon.className = "file-icon-wrap";
+    renderFileIcon(icon, name);
+
+    const label = document.createElement("span");
+    label.className = "name";
+    label.textContent = name;
+
+    item.append(icon, label);
+
+    if (isStale(name)) {
+      const dot = document.createElement("span");
+      dot.className = "dirty-dot";
+      dot.title = "Changed since the last run";
+      item.append(dot);
+    }
+
+    const actions = document.createElement("span");
+    actions.className = "row-actions";
+    for (const [action, iconId, title] of [
+      ["rename", "#i-pencil", "Rename"],
+      ["delete", "#i-trash", "Delete"],
+    ]) {
+      const button = document.createElement("button");
+      button.className = `icon-btn${action === "delete" ? " danger" : ""}`;
+      button.dataset.action = action;
+      button.title = `${title} ${name}`;
+      button.setAttribute("aria-label", `${title} ${name}`);
+      button.innerHTML = `<svg class="icon"><use href="${iconId}"/></svg>`;
+      actions.append(button);
+    }
+    item.append(actions);
+
+    dom.fileList.append(item);
+  }
+}
+
+dom.fileList.addEventListener("click", (event) => {
+  const item = event.target.closest(".file-item");
+  if (!item) return;
+  const action = event.target.closest("[data-action]")?.dataset.action;
+  const name = item.dataset.name;
+  if (action === "rename") renameFile(name);
+  else if (action === "delete") deleteFile(name);
+  else openFile(name);
+});
+
+dom.fileList.addEventListener("keydown", (event) => {
+  const item = event.target.closest(".file-item");
+  if (!item) return;
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    openFile(item.dataset.name);
+  }
+});
+
+/* ==========================================================================
+ * Tabs
+ * ========================================================================== */
+
+function renderTabs() {
+  dom.tabs.replaceChildren();
+
+  for (const name of state.openTabs) {
+    if (!state.files.has(name)) continue;
+    const tab = document.createElement("div");
+    tab.className = `tab${name === state.active ? " is-active" : ""} lang-${languageFor(name)}`;
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", String(name === state.active));
+    tab.tabIndex = 0;
+
+    tab.innerHTML = "";
+    const iconWrap = document.createElement("span");
+    iconWrap.className = "file-icon-wrap";
+    renderFileIcon(iconWrap, name);
+    tab.append(iconWrap);
+    const label = document.createElement("span");
+    label.textContent = name;
+    tab.append(label);
+
+    if (isStale(name)) {
+      const dot = document.createElement("span");
+      dot.className = "dirty-dot";
+      dot.title = "Changed since the last run";
+      tab.append(dot);
+    }
+
+    const close = document.createElement("button");
+    close.className = "tab-close";
+    close.dataset.close = name;
+    close.title = `Close ${name}`;
+    close.setAttribute("aria-label", `Close ${name}`);
+    close.innerHTML = `<svg class="icon"><use href="#i-x"/></svg>`;
+    tab.append(close);
+
+    dom.tabs.append(tab);
+  }
+
+  dom.emptyState.hidden = Boolean(state.active);
+}
+
+dom.tabs.addEventListener("click", (event) => {
+  const closeName = event.target.closest("[data-close]")?.dataset.close;
+  if (closeName) {
+    closeTab(closeName);
+    return;
+  }
+  const tab = event.target.closest(".tab");
+  if (tab) {
+    const index = [...dom.tabs.children].indexOf(tab);
+    const name = state.openTabs[index];
+    if (name) edgeActivate(name);
+  }
+});
+
+dom.tabs.addEventListener("keydown", (event) => {
+  const tab = event.target.closest(".tab");
+  if (!tab) return;
+  const index = [...dom.tabs.children].indexOf(tab);
+  if (event.key === "Enter") {
+    const name = state.openTabs[index];
+    if (name) edgeActivate(name);
+  } else if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+    event.preventDefault();
+    const delta = event.key === "ArrowRight" ? 1 : -1;
+    const next = (index + delta + state.openTabs.length) % state.openTabs.length;
+    const name = state.openTabs[next];
+    if (name) {
+      edgeActivate(name);
+      dom.tabs.children[next]?.focus();
+    }
+  }
+});
+
+/* ==========================================================================
+ * Monaco
+ * ========================================================================== */
+
+const THEME = {
+  base: "vs-dark",
+  inherit: true,
+  rules: [
+    { token: "comment", foreground: "6b7896", fontStyle: "italic" },
+    { token: "keyword", foreground: "c084fc" },
+    { token: "string", foreground: "86efac" },
+    { token: "number", foreground: "fbbf24" },
+    { token: "regexp", foreground: "fca5a5" },
+    { token: "type", foreground: "7dd3fc" },
+    { token: "function", foreground: "93c5fd" },
+    { token: "variable", foreground: "dbe3f4" },
+    { token: "constant", foreground: "f9a8d4" },
+    { token: "delimiter", foreground: "94a3b8" },
+  ],
+  colors: {
+    "editor.background": "#0c111b",
+    "editor.foreground": "#dbe3f4",
+    "editorLineNumber.foreground": "#2f3b55",
+    "editorLineNumber.activeForeground": "#7c8db3",
+    "editorCursor.foreground": "#38bdf8",
+    "editor.selectionBackground": "#1e3a5f",
+    "editor.inactiveSelectionBackground": "#16283f",
+    "editor.lineHighlightBackground": "#101827",
+    "editorIndentGuide.background1": "#1a2437",
+    "editorIndentGuide.activeBackground1": "#2b3a5e",
+    "editorWidget.background": "#131a2a",
+    "editorWidget.border": "#2b3a5e",
+    "editorSuggestWidget.background": "#131a2a",
+    "editorSuggestWidget.selectedBackground": "#1d2b45",
+    "scrollbarSlider.background": "#26314980",
+    "scrollbarSlider.hoverBackground": "#33415faa",
+    "minimap.background": "#0c111b",
+  },
+};
+
+const LIGHT_THEME = {
+  base: "vs",
+  inherit: true,
+  rules: [
+    { token: "comment", foreground: "8a94a6", fontStyle: "italic" },
+    { token: "keyword", foreground: "7c3aed" },
+    { token: "string", foreground: "15803d" },
+    { token: "number", foreground: "b45309" },
+    { token: "regexp", foreground: "be123c" },
+    { token: "type", foreground: "0369a1" },
+    { token: "function", foreground: "1d4ed8" },
+    { token: "variable", foreground: "1e293b" },
+    { token: "constant", foreground: "be185d" },
+    { token: "delimiter", foreground: "64748b" },
+  ],
+  colors: {
+    "editor.background": "#ffffff",
+    "editor.foreground": "#1e293b",
+    "editorLineNumber.foreground": "#b6c1d2",
+    "editorLineNumber.activeForeground": "#475569",
+    "editorCursor.foreground": "#0284c7",
+    "editor.selectionBackground": "#bfdbfe",
+    "editor.inactiveSelectionBackground": "#dbeafe",
+    "editor.lineHighlightBackground": "#f1f5f9",
+    "editorIndentGuide.background1": "#e2e8f0",
+    "editorIndentGuide.activeBackground1": "#94a3b8",
+    "editorWidget.background": "#f8fafc",
+    "editorWidget.border": "#cbd5e1",
+    "editorSuggestWidget.background": "#ffffff",
+    "editorSuggestWidget.selectedBackground": "#e0f2fe",
+    "scrollbarSlider.background": "#94a3b850",
+    "scrollbarSlider.hoverBackground": "#64748b70",
+    "minimap.background": "#ffffff",
+  },
+};
+
+function monacoWorker(path) {
+  const source = `self.MonacoEnvironment = { baseUrl: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/' };\nimportScripts('${MONACO_CDN}/${path.replace(/^vs\//, '')}');`;
+  return URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+}
+
+function loadMonaco() {
+  return new Promise((resolve, reject) => {
+    if (!window.require) {
+      reject(new Error("Monaco loader missing"));
+      return;
+    }
+
+    const timeout = setTimeout(() => reject(new Error("Monaco timed out")), 8000);
+
+    const workers = {
+      editor: monacoWorker("vs/base/worker/workerMain.js"),
+      json: monacoWorker("vs/language/json/jsonWorker.js"),
+      css: monacoWorker("vs/language/css/cssWorker.js"),
+      html: monacoWorker("vs/language/html/htmlWorker.js"),
+      typescript: monacoWorker("vs/language/typescript/tsWorker.js"),
+    };
+
+    window.MonacoEnvironment = {
+      getWorkerUrl(moduleId, label) {
+        if (label === "json") return workers.json;
+        if (label === "css" || label === "scss" || label === "less") return workers.css;
+        if (label === "html" || label === "handlebars" || label === "razor") return workers.html;
+        if (label === "typescript" || label === "javascript") return workers.typescript;
+        return workers.editor;
+      },
+    };
+
+    window.require.config({ paths: { vs: MONACO_CDN } });
+    window.require(["vs/editor/editor.main"], (monaco) => {
+      clearTimeout(timeout);
+      resolve(monaco || window.monaco);
+    }, (error) => {
+      clearTimeout(timeout);
+      reject(error || new Error("Monaco failed to load"));
+    });
+  });
+}
+
+function registerCompletions(monaco) {
+  registerPythonIntelliSense(monaco);
+}
+
+function ensureModel(name) {
+  const monaco = state.monaco;
+  let model = state.models.get(name);
+  if (model && !model.isDisposed()) return model;
+
+  model = monaco.editor.createModel(
+    state.files.get(name) ?? "",
+    languageFor(name),
+    monaco.Uri.parse(`file:///workspace/${name.split("/").map(encodeURIComponent).join("/")}`)
+  );
+  state.models.set(name, model);
+  return model;
+}
+
+function syncEditor() {
+  const editor = state.editor;
+  if (!editor) return;
+
+  if (!state.active || !state.files.has(state.active)) {
+    dom.emptyState.hidden = false;
+    return;
+  }
+  dom.emptyState.hidden = true;
+
+  const model = ensureModel(state.active);
+  if (editor.getModel() === model) return;
+
+  const previous = editor.getModel();
+  if (previous) {
+    const previousName = [...state.models.entries()].find(([, value]) => value === previous)?.[0];
+    if (previousName) state.views.set(previousName, editor.saveViewState());
+  }
+
+  editor.setModel(model);
+  const view = state.views.get(state.active);
+  if (view) editor.restoreViewState(view);
+  editor.focus();
+}
+
+function setEditorLoading(isLoading) {
+  if (!dom.editorLoading) return;
+  dom.editorLoading.hidden = !isLoading;
+  dom.editorLoading.closest(".editor-wrap")?.setAttribute("aria-busy", String(isLoading));
+}
+
+async function initEditor() {
+  dbg("initEditor start");
+  setEditorLoading(true);
+  try {
+    const monaco = await loadMonaco();
+    state.monaco = monaco;
+
+    monaco.editor.defineTheme("pyide", THEME);
+    monaco.editor.defineTheme("pyide-light", LIGHT_THEME);
+    registerCompletions(monaco);
+    registerLanguageCompletions(monaco);
+    state.editor = monaco.editor.create(dom.editor, {
+      model: null,
+      theme: settings.theme === "light" ? "pyide-light" : "pyide",
+      automaticLayout: true,
+      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+      fontSize: settings.fontSize,
+      lineHeight: Math.round(settings.fontSize * 1.55),
+      fontLigatures: true,
+      minimap: { enabled: settings.minimap, renderCharacters: false, maxColumn: 80 },
+      scrollBeyondLastLine: false,
+      smoothScrolling: true,
+      cursorBlinking: "smooth",
+      cursorSmoothCaretAnimation: "on",
+      padding: { top: 14, bottom: 24 },
+      renderLineHighlight: "line",
+      tabSize: settings.tabSize,
+      insertSpaces: true,
+      wordWrap: settings.wordWrap ? "on" : "off",
+      lineNumbers: settings.lineNumbers ? "on" : "off",
+      quickSuggestions: settings.quickSuggestions,
+      suggestOnTriggerCharacters: true,
+      parameterHints: { enabled: settings.parameterHints },
+      bracketPairColorization: { enabled: true },
+      guides: { bracketPairs: true, indentation: true },
+      suggest: { showWords: false },
+      scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
+    });
+
+    state.editor.onDidChangeModelContent(() => {
+      const name = state.active;
+      if (!name) return;
+      state.files.set(name, state.editor.getValue());
+      renderTabs();
+      renderFileList();
+      scheduleSave();
+      if (languageFor(name) === "html") scheduleHtmlPreview();
+    });
+
+    state.editor.onDidChangeCursorPosition((event) => {
+      dom.statusCursor.textContent = `Ln ${event.position.lineNumber}, Col ${event.position.column}`;
+    });
+
+    state.editor.onDidChangeModel(() => updateStatusLanguage());
+
+    state.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runActive());
+    state.editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
+      () => runWithInput()
+    );
+
+    setEditorLoading(false);
+    syncEditor();
+  } catch (error) {
+    if (state.editor && !state.editor.fallback) {
+      state.editor.dispose();
+      state.editor = null;
+    }
+    if (!state.editor) initFallbackEditor();
+    setEditorLoading(false);
+    dbg("editor load failed", error?.message || String(error));
+    toast("Monaco could not load. The basic editor is ready.", "error");
+    console.error(error);
+  }
+}
+
+/** Apply editor/terminal/theme settings everywhere they matter. */
+function applySettings() {
+  const root = document.documentElement;
+  root.dataset.theme = settings.theme;
+  root.style.colorScheme = settings.theme;
+  root.style.setProperty("--editor-font-size", `${settings.fontSize}px`);
+  root.style.setProperty("--terminal-font-size", `${settings.terminalFontSize}px`);
+
+  if (state.editor && !state.editor.fallback) {
+    state.editor.updateOptions({
+      fontSize: settings.fontSize,
+      lineHeight: Math.round(settings.fontSize * 1.55),
+      tabSize: settings.tabSize,
+      wordWrap: settings.wordWrap ? "on" : "off",
+      minimap: { enabled: settings.minimap, renderCharacters: false, maxColumn: 80 },
+      lineNumbers: settings.lineNumbers ? "on" : "off",
+      quickSuggestions: settings.quickSuggestions,
+      suggestOnTriggerCharacters: settings.quickSuggestions,
+      parameterHints: { enabled: settings.parameterHints },
+    });
+  }
+
+  if (state.monaco) {
+    state.monaco.editor.setTheme(settings.theme === "light" ? "pyide-light" : "pyide");
+  }
+
+  if (shell) {
+    const nextMode = settings.shell === "pwsh" ? "pwsh" : "bash";
+    if (shell.mode !== nextMode) shell.setMode(nextMode, { silent: true });
+    refreshPrompt();
+  }
+
+  updateStatusLanguage();
+  syncSettingsForm();
+}
+
+function syncSettingsForm() {
+  const form = dom.settingsForm;
+  if (!form) return;
+  for (const field of form.querySelectorAll("[data-setting]")) {
+    const key = field.dataset.setting;
+    if (!(key in settings)) continue;
+    if (field.type === "checkbox") field.checked = Boolean(settings[key]);
+    else field.value = String(settings[key]);
+  }
+}
+
+function populateLanguageSelect() {
+  if (!dom.statusLanguage) return;
+  dom.statusLanguage.replaceChildren();
+  for (const [id, definition] of Object.entries(LANGUAGE_DEFS)) {
+    const option = document.createElement("option");
+    option.value = id;
+    option.textContent = definition.label;
+    dom.statusLanguage.append(option);
+  }
+}
+
+function initFallbackEditor() {
+  if (state.editor?.fallback) return;
+
+  const area = document.createElement("textarea");
+  area.className = "editor-fallback";
+  area.spellcheck = false;
+  area.setAttribute("aria-label", "Code editor");
+  area.setAttribute("autocapitalize", "off");
+  area.setAttribute("autocomplete", "off");
+  area.setAttribute("autocorrect", "off");
+  dom.editor.append(area);
+
+  const load = () => {
+    area.value = state.active ? state.files.get(state.active) ?? "" : "";
+    area.disabled = !state.active;
+  };
+  area.addEventListener("input", () => {
+    if (!state.active) return;
+    state.files.set(state.active, area.value);
+    scheduleSave();
+  });
+  area.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      runActive();
+    }
+  });
+
+  state.editor = {
+    fallback: true,
+    getValue: () => area.value,
+    setValue: (value) => {
+      area.value = value;
+    },
+    getModel: () => null,
+    focus: () => area.focus(),
+    saveViewState: () => null,
+    restoreViewState: () => {},
+    setModel: () => {},
+  };
+  state.editorSync = load;
+  load();
+}
+
+/* ==========================================================================
+ * Terminal
+ * ========================================================================== */
+
+const ANSI = {
+  30: "#4b5563", 31: "#f87171", 32: "#34d399", 33: "#fbbf24",
+  34: "#60a5fa", 35: "#c084fc", 36: "#22d3ee", 37: "#e5e7eb",
+  90: "#6b7280", 91: "#fca5a5", 92: "#86efac", 93: "#fde68a",
+  94: "#93c5fd", 95: "#d8b4fe", 96: "#67e8f9", 97: "#f8fafc",
+};
+
+function ansiFragment(text) {
+  const fragment = document.createDocumentFragment();
+  const pattern = /\x1b\[([0-9;]*)m/g;
+  let color = null;
+  let bold = false;
+  let dim = false;
+  let last = 0;
+  let match;
+
+  const push = (chunk) => {
+    if (!chunk) return;
+    const span = document.createElement("span");
+    span.textContent = chunk;
+    if (color) span.style.color = color;
+    if (bold) span.style.fontWeight = "700";
+    if (dim) span.style.opacity = "0.7";
+    fragment.append(span);
+  };
+
+  while ((match = pattern.exec(text))) {
+    push(text.slice(last, match.index));
+    const codes = match[1].split(";").filter(Boolean).map(Number);
+    if (!codes.length) codes.push(0);
+    for (const code of codes) {
+      if (code === 0) {
+        color = null;
+        bold = false;
+        dim = false;
+      } else if (code === 1) bold = true;
+      else if (code === 2) dim = true;
+      else if (code === 22) {
+        bold = false;
+        dim = false;
+      } else if (code === 39) color = null;
+      else if (ANSI[code]) color = ANSI[code];
+    }
+    last = pattern.lastIndex;
+  }
+  push(text.slice(last));
+  return fragment;
+}
+
+function terminalNearBottom() {
+  const el = dom.terminal;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+}
+
+function writeTerminal(text, kind = "") {
+  if (text === undefined || text === null) return;
+  const stick = terminalNearBottom();
+  const clean = String(text).replace(/\r\n/g, "\n").replace(/\r/g, "");
+  const lines = clean.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+
+  const fragment = document.createDocumentFragment();
+  for (const line of lines) {
+    const div = document.createElement("div");
+    div.className = `term-line${kind ? ` ${kind}` : ""}`;
+    if (line.includes("\x1b[")) div.append(ansiFragment(line));
+    else div.textContent = line;
+    fragment.append(div);
+  }
+  dom.terminal.append(fragment);
+
+  if (stick) dom.terminal.scrollTop = dom.terminal.scrollHeight;
+  announce(clean);
+}
+
+function clearTerminal() {
+  dom.terminal.replaceChildren();
+}
+
+/* ==========================================================================
+ * Terminal prompt + shell
+ * ========================================================================== */
+
+const shellHistory = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SHELL_HISTORY_KEY) || "[]");
+    return Array.isArray(saved)
+      ? saved.filter((line) => typeof line === "string").slice(-500)
+      : [];
+  } catch {
+    return [];
+  }
+})();
+
+let historyIndex = shellHistory.length;
+
+function refreshPrompt() {
+  if (!shell) return;
+  const parts = shell.promptParts();
+  if (dom.promptPath) dom.promptPath.textContent = parts.path;
+  if (dom.promptSigil) dom.promptSigil.textContent = parts.sigil;
+  dom.promptInput.placeholder = shell.mode === "pwsh"
+    ? "Type a PowerShell command — try “help”"
+    : "Type a bash command — try “help”";
+  dom.promptInput.title = shell.promptText();
+}
+
+function shellWriteFile(key, content) {
+  const model = state.models.get(key);
+  state.files.set(key, String(content));
+  if (model && !model.isDisposed()) {
+    if (model.getValue() !== String(content)) model.setValue(String(content));
+  } else if (state.active === key && state.editor?.fallback) {
+    state.editor.setValue(String(content));
+  }
+  renderFileList();
+  renderTabs();
+  scheduleSave();
+}
+
+function shellDeleteFile(key) {
+  state.files.delete(key);
+  state.snapshots.delete(key);
+  const model = state.models.get(key);
+  if (model) model.dispose();
+  state.models.delete(key);
+  state.views.delete(key);
+  state.openTabs = state.openTabs.filter((item) => item !== key);
+  if (state.active === key) state.active = state.openTabs[0] || null;
+  renderFileList();
+  renderTabs();
+  syncEditor();
+  refreshLanguage();
+  updateRunButtons();
+  scheduleSave();
+}
+
+function shellHost() {
+  return {
+    getFiles: () => state.files,
+    loadDirs: () => [...state.dirs],
+    saveDirs: (dirs) => {
+      state.dirs = new Set(dirs);
+      try {
+        localStorage.setItem(SHELL_DIRS_KEY, JSON.stringify([...state.dirs]));
+      } catch {
+        /* ignore */
+      }
+      scheduleSave();
+    },
+    writeFile: shellWriteFile,
+    deleteFile: shellDeleteFile,
+    openFile,
+    downloadFile,
+    clear: clearTerminal,
+    write: (text, kind) => writeTerminal(text, kind),
+    runPython: async (key, lines) => {
+      if (state.runtime !== "ready") {
+        writeTerminal("python: the Python runtime is still starting", "err");
+        return false;
+      }
+      return runFile(key, lines, { quiet: true });
+    },
+    runJavaScript: async (key) => runJavaScript(key, { quiet: true }),
+    pip: async (packages) => {
+      if (state.runtime !== "ready" && state.runtime !== "running") {
+        writeTerminal("pip: the Python runtime is still starting", "err");
+        return false;
+      }
+      state.worker?.postMessage({ type: "pip", packages });
+      return true;
+    },
+    resetWorkspace: async () => resetWorkspace(),
+    version: () => `Python ${state.pyVersion} · Pyodide ${PYODIDE_VERSION} · browser runtime`,
+    getActiveFile: () => state.active,
+    languageFor,
+    saveHistory: (history) => {
+      try {
+        localStorage.setItem(SHELL_HISTORY_KEY, JSON.stringify(history.slice(-500)));
+      } catch {
+        /* ignore */
+      }
+    },
+  };
+}
+
+function initShell() {
+  shell = createShell(shellHost(), {
+    mode: settings.shell,
+    history: shellHistory,
+    dirs: [...state.dirs],
+  });
+  historyIndex = shell.history.length;
+  refreshPrompt();
+}
+
+function insertCompletion(result) {
+  const value = dom.promptInput.value;
+  const caret = dom.promptInput.selectionStart ?? value.length;
+  const insert = result.matches.length === 1 ? result.matches[0] : result.common;
+  if (!insert || insert.length <= result.prefix.length) return false;
+
+  const next = value.slice(0, result.start) + insert + value.slice(caret);
+  dom.promptInput.value = next;
+  let position = result.start + insert.length;
+  if (result.matches.length === 1 && !insert.endsWith("/")) {
+    dom.promptInput.value = `${next.slice(0, position)} ${next.slice(position)}`;
+    position += 1;
+  }
+  dom.promptInput.setSelectionRange(position, position);
+  return true;
+}
+
+dom.promptForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const line = dom.promptInput.value;
+  dom.promptInput.value = "";
+  if (!line.trim()) {
+    refreshPrompt();
+    return;
+  }
+
+  try {
+    await shell.execute(line);
+  } catch (error) {
+    writeTerminal(String(error?.message || error), "err");
+  }
+
+  historyIndex = shell.history.length;
+  refreshPrompt();
+  updateRunButtons();
+  scheduleSave();
+});
+
+dom.promptInput.addEventListener("keydown", (event) => {
+  if (!shell) return;
+  const history = shell.history;
+
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    if (!history.length) return;
+    historyIndex = Math.max(0, historyIndex - 1);
+    dom.promptInput.value = history[historyIndex] ?? "";
+    dom.promptInput.setSelectionRange(dom.promptInput.value.length, dom.promptInput.value.length);
+  } else if (event.key === "ArrowDown") {
+    event.preventDefault();
+    historyIndex = Math.min(history.length, historyIndex + 1);
+    dom.promptInput.value = history[historyIndex] ?? "";
+    dom.promptInput.setSelectionRange(dom.promptInput.value.length, dom.promptInput.value.length);
+  } else if (event.key === "Tab") {
+    event.preventDefault();
+    const value = dom.promptInput.value;
+    const caret = dom.promptInput.selectionStart ?? value.length;
+    const result = shell.complete(value, caret);
+    if (!result) return;
+    if (insertCompletion(result)) {
+      if (result.matches.length > 1) {
+        writeTerminal(result.matches.join("  "), "sys");
+      }
+    } else if (result.matches.length > 1) {
+      writeTerminal(result.matches.join("  "), "sys");
+    }
+  } else if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "c") {
+    const start = dom.promptInput.selectionStart ?? 0;
+    const end = dom.promptInput.selectionEnd ?? 0;
+    if (start !== end) {
+      const selected = dom.promptInput.value.slice(start, end);
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          navigator.clipboard.writeText(selected).catch(() => {});
+        } else {
+          const ta = document.createElement("textarea");
+          ta.value = selected;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.append(ta);
+          ta.select();
+          document.execCommand("copy");
+          ta.remove();
+        }
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    if (!dom.promptInput.value) return;
+    event.preventDefault();
+    writeTerminal(`${shell.promptText()} ${dom.promptInput.value}^C`, "cmd");
+    dom.promptInput.value = "";
+  } else if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "l") {
+    event.preventDefault();
+    clearTerminal();
+  } else if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "u") {
+    event.preventDefault();
+    dom.promptInput.value = "";
+  }
+});
+
+dom.terminal.addEventListener("click", () => {
+  if (!window.getSelection()?.toString()) dom.promptInput.focus({ preventScroll: true });
+});
+
+dom.promptForm.addEventListener("click", (event) => {
+  if (event.target === dom.promptForm) dom.promptInput.focus({ preventScroll: true });
+});
 
 /* ==========================================================================
  * Runtime (worker)
@@ -478,12 +1673,12 @@ function runJavaScript(name, options = {}) {
   state.jsRunning = true;
   updateRunButtons();
   dom.statusRuntime.textContent = "JavaScript · browser";
-
   const iframe = dom.htmlPreview ?? document.createElement("iframe");
+  const shouldMountPreview = !iframe.isConnected;
   dom.htmlPreview = iframe;
   iframe.className = "html-preview";
   iframe.sandbox = "allow-scripts allow-modals";
-  if (!dom.htmlPreview || !dom.htmlPreview.isConnected) {
+  if (shouldMountPreview) {
     document.body.append(iframe);
     iframe.hidden = true;
   }
@@ -2047,7 +3242,7 @@ renderBreadcrumbs();
 
 const LANGUAGE_COMPLETIONS = {
   javascript: {
-    keywords: ["const","let","var","function","return","if","else","for","while","do","switch","case","break","continue","try","catch","finally","throw","new","class","extends","import","export"],
+    keywords: ["const","let","var","function","return","if","else","for","while","do","switch","case","break","continue","try","catch","finally","throw","new","class","extends","import","export","default","async","await","yield","typeof","instanceof","in","of","null","undefined","true","false","this","super"],
     snippets: [
       { label: "clg", insertText: "console.log(${1});", detail: "console.log" },
       { label: "fn", insertText: "function ${1:name}(${2}) {\n  ${3}\n}", detail: "function" },
@@ -2058,7 +3253,7 @@ const LANGUAGE_COMPLETIONS = {
     ],
   },
   typescript: {
-    keywords: ["const","let","var","function","return","if","else","for","while","do","switch","case","break","continue","try","catch","finally","throw","new","class","extends","import","export"],
+    keywords: ["const","let","var","function","return","if","else","for","while","do","switch","case","break","continue","try","catch","finally","throw","new","class","extends","import","export","default","async","await","yield","typeof","instanceof","in","of","null","undefined","true","false","this","super","interface","type","enum","implements","readonly","private","public","protected","as","keyof","never","unknown","any","void"],
     snippets: [
       { label: "clg", insertText: "console.log(${1});", detail: "console.log" },
       { label: "iface", insertText: "interface ${1:Name} {\n  ${2}\n}", detail: "interface" },
@@ -2066,7 +3261,7 @@ const LANGUAGE_COMPLETIONS = {
     ],
   },
   c: {
-    keywords: ["auto","break","case","char","const","continue","default","do","double","else","enum","extern","float","for","goto","if","int","long","register","return","short","signed","sizeof"],
+    keywords: ["auto","break","case","char","const","continue","default","do","double","else","enum","extern","float","for","goto","if","int","long","register","return","short","signed","sizeof","static","struct","switch","typedef","union","unsigned","void","volatile","while","#include","#define","#ifdef","#ifndef","#endif","#pragma"],
     snippets: [
       { label: "main", insertText: "int main(void) {\n  ${1}\n  return 0;\n}", detail: "main function" },
       { label: "inc", insertText: "#include <${1:stdio.h}>", detail: "include" },
@@ -2075,7 +3270,7 @@ const LANGUAGE_COMPLETIONS = {
     ],
   },
   cpp: {
-    keywords: ["alignas","alignof","and","and_eq","asm","auto","bitand","bitor","bool","break","case","catch","char","char8_t","char16_t","char32_t","class","compl","concept","const","consteval"],
+    keywords: ["alignas","alignof","and","and_eq","asm","auto","bitand","bitor","bool","break","case","catch","char","char8_t","char16_t","char32_t","class","compl","concept","const","consteval","constexpr","constinit","const_cast","continue","co_await","co_return","co_yield","decltype","default","delete","do","double","dynamic_cast","else","enum","explicit","export","extern","false","float","for","friend","goto","if","inline","int","long","mutable","namespace","new","noexcept","not","not_eq","nullptr","operator","or","or_eq","private","protected","public","register","reinterpret_cast","requires","return","short","signed","sizeof","static","static_assert","static_cast","struct","switch","template","this","thread_local","throw","true","try","typedef","typeid","typename","union","unsigned","using","virtual","void","volatile","wchar_t","while","xor","xor_eq","#include"],
     snippets: [
       { label: "main", insertText: "int main() {\n  ${1}\n  return 0;\n}", detail: "main function" },
       { label: "inc", insertText: "#include <${1:iostream}>", detail: "include" },
@@ -2084,7 +3279,7 @@ const LANGUAGE_COMPLETIONS = {
     ],
   },
   java: {
-    keywords: ["abstract","assert","boolean","break","byte","case","catch","char","class","const","continue","default","do","double","else","enum","extends","final","finally","float","for","goto"],
+    keywords: ["abstract","assert","boolean","break","byte","case","catch","char","class","const","continue","default","do","double","else","enum","extends","final","finally","float","for","goto","if","implements","import","instanceof","int","interface","long","native","new","package","private","protected","public","return","short","static","strictfp","super","switch","synchronized","this","throw","throws","transient","try","void","volatile","while"],
     snippets: [
       { label: "main", insertText: "public static void main(String[] args) {\n  ${1}\n}", detail: "main method" },
       { label: "sout", insertText: "System.out.println(${1});", detail: "println" },
@@ -2093,7 +3288,7 @@ const LANGUAGE_COMPLETIONS = {
     ],
   },
   go: {
-    keywords: ["break","case","chan","const","continue","default","defer","else","fallthrough","for","func","go","goto","if","import","interface","map","package","range","return","select","struct"],
+    keywords: ["break","case","chan","const","continue","default","defer","else","fallthrough","for","func","go","goto","if","import","interface","map","package","range","return","select","struct","switch","type","var"],
     snippets: [
       { label: "main", insertText: "func main() {\n  ${1}\n}", detail: "main function" },
       { label: "fmt", insertText: "fmt.Println(${1})", detail: "println" },
@@ -2101,7 +3296,7 @@ const LANGUAGE_COMPLETIONS = {
     ],
   },
   rust: {
-    keywords: ["as","async","await","break","const","continue","crate","dyn","else","enum","extern","false","fn","for","if","impl","in","let","loop","match","mod","move","mut","pub","ref","return"],
+    keywords: ["as","async","await","break","const","continue","crate","dyn","else","enum","extern","false","fn","for","if","impl","in","let","loop","match","mod","move","mut","pub","ref","return","self","Self","static","struct","super","trait","true","type","unsafe","use","where","while"],
     snippets: [
       { label: "main", insertText: "fn main() {\n  ${1}\n}", detail: "main function" },
       { label: "println", insertText: "println!(\"${1}\");", detail: "println!" },
@@ -2109,7 +3304,7 @@ const LANGUAGE_COMPLETIONS = {
     ],
   },
   shell: {
-    keywords: ["if","then","else","elif","fi","for","while","do","done","case","esac","function","return","export","local","readonly","unset","shift","trap","source","alias","unalias","echo","printf"],
+    keywords: ["if","then","else","elif","fi","for","while","do","done","case","esac","function","return","export","local","readonly","unset","shift","trap","source","alias","unalias","echo","printf","cd","pwd","ls","cat","grep","sed","awk","find","xargs","sort","uniq","head","tail","wc","mkdir","rm","cp","mv","chmod","chown","sudo","apt","pip","python","node","git"],
     snippets: [
       { label: "if", insertText: "if [ ${1} ]; then\n  ${2}\nfi", detail: "if statement" },
       { label: "for", insertText: "for i in ${1}; do\n  ${2}\ndone", detail: "for loop" },
@@ -2126,7 +3321,7 @@ const LANGUAGE_COMPLETIONS = {
   html: {
     keywords: [],
     snippets: [
-      { label: "html5", insertText: "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>${1}</title>\n</head>\n<body>\n  ${2}\n</body>\n</html>", detail: "HTML5 skeleton" },
+      { label: "html5", insertText: "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>${1:Document}</title>\n</head>\n<body>\n  ${2}\n</body>\n</html>", detail: "HTML5 boilerplate" },
       { label: "div", insertText: "<div>${1}</div>", detail: "div" },
       { label: "script", insertText: "<script>\n  ${1}\n</script>", detail: "script" },
       { label: "style", insertText: "<style>\n  ${1}\n</style>", detail: "style" },
@@ -2149,7 +3344,7 @@ const LANGUAGE_COMPLETIONS = {
   markdown: {
     keywords: [],
     snippets: [
-      { label: "code", insertText: "```\${1:js}\n${2}\n```", detail: "code block" },
+      { label: "code", insertText: "```${1:js}\n${2}\n```", detail: "code block" },
       { label: "link", insertText: "[${1:text}](${2:url})", detail: "link" },
       { label: "table", insertText: "| ${1:Col} | ${2:Col} |\n|---|---|\n| ${3} | ${4} |", detail: "table" },
     ],
@@ -2216,18 +3411,10 @@ function boot() {
   applySettings();
   refreshPrompt();
   initEditor();
-  setTimeout(() => {
-    dbg("editor fallback timer fired", { hasEditor: !!state.editor });
-    if (!state.editor) {
-      dom.editorLoading.hidden = true;
-      initFallbackEditor();
-      toast("Editor CDN unavailable — using the basic editor.", "error");
-    }
-  }, 2000);
   state.runtime = "idle";
   dom.runtime.dataset.state = "idle";
-  dom.runtimeText.textContent = "Python runtime - runs on demand";
-  dom.statusRuntime.textContent = "Python - on demand";
+  dom.runtimeText.textContent = "Python runtime · on demand";
+  dom.statusRuntime.textContent = "Python · on demand";
   updateRunButtons();
 }
 
