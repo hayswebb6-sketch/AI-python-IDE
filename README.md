@@ -1,68 +1,97 @@
-# Python IDE — client-side, static
+# Python IDE — browser-based static workspace
 
-A fully static, VS Code-flavoured IDE that runs in your browser. Python executes through
-[Pyodide](https://pyodide.org/) (CPython compiled to WebAssembly) and JavaScript executes in a
-throwaway Web Worker. There is **no backend and no build step** — the whole site is plain
-HTML, CSS and ES modules, so it deploys straight to Render as a static site.
+A static, browser-hosted IDE for writing and running code locally in the browser. The app is intentionally backend-free and can be served from any static host or local HTTP server.
 
-## Features
+Python runs in a Pyodide-backed Web Worker using CPython compiled to WebAssembly. JavaScript runs in a separate browser sandbox. The app includes a file explorer, Monaco-style editor, terminal, canvas preview, and Tk-inspired window panel.
 
-- **Monaco editor** (VS Code's editor) with real autocomplete, hover, signature help and
-  light/dark themes.
-- **Two runnable languages**: Python (Pyodide) and JavaScript (Web Worker). TypeScript,
-  HTML, CSS, JSON, Markdown, Shell, PowerShell, C and C++ are first-class editing
-  languages with proper language detection and a status-bar language picker.
-- **Tkinter / turtle / pygame previews**: tkinter widgets render in a live Window panel,
-  turtle and pygame draw on a Canvas panel.
-- **A real shell** in the terminal: bash and PowerShell modes, pipes, redirects,
-  `&&` / `||` / `;`, globs, variables (`$VAR`, `$?`, `$env:NAME`), aliases, history and
-  tab completion. It operates on the same virtual workspace the editor shows.
-- **Workspace persistence** in `localStorage` (files, folders, tabs, layout, settings).
-- **Settings dialog**: theme, font size, tab size, word wrap, minimap, line numbers,
-  quick suggestions, parameter hints, terminal font size and shell mode.
-- **Import / export** of files and a full workspace reset.
+This is not a full server-backed IDE. There is no backend, no database, and no build step. The project is plain HTML, CSS, and ES modules.
+
+## What it does
+
+- Monaco-style editor surface with tabs, breadcrumbs, status bar, and file management
+- Python execution via Pyodide / WebAssembly
+- JavaScript execution in an isolated iframe sandbox
+- Shell-style terminal emulation with command history and prompt interactions
+- Canvas output for turtle / pygame-style drawing
+- Tk-inspired widget rendering in a Window panel
+- Workspace persistence in localStorage
+- Import / export of files
+- Theme settings and editor settings persistence
+- Language switching and documentation links
+
+## Supported execution modes
+
+- Python: runs through Pyodide
+- JavaScript: runs in a fresh browser sandbox and streams console output back to the terminal
+- Lua: runs in a dedicated worker
+- SQL: runs in a dedicated worker
+- Shell scripts: executes through the in-browser shell emulator
+- HTML: opens a preview window for generated HTML content
 
 ## Project layout
 
-```
-index.html          markup + dialogs
+```text
+index.html              page structure, dialogs, shell UI
 assets/
-  app.js            UI, editor, workers, settings, shell wiring
-  styles.css        theme variables (dark + light) and layout
-  worker.js         classic Web Worker wrapping Pyodide
-  js-worker.js      throwaway worker for JavaScript runs
-  shell.js          browser-side bash / PowerShell emulator
-  shims.py          turtle / tkinter / pygame shims for Pyodide
-  completions.js    Python IntelliSense data + providers
+  app.js                 main app logic, editor, file system, runtime wiring
+  shell.js               browser-side shell emulator
+  worker.js              Pyodide worker and Python runtime bootstrap
+  js-worker.js           JavaScript execution worker
+  lua-worker.js          Lua execution worker
+  sql-worker.js          SQL execution worker
+  shims.py               browser-side shims for turtle / tkinter / pygame
+  completions.js         completion metadata for editor IntelliSense
+  styles.css             layout and theme styling
+sw.js                   service worker cache for static assets
+README.md               project documentation
 ```
 
 ## Running locally
 
-Any static file server works (the Pyodide worker needs HTTP, not `file://`):
+Because Pyodide loads browser resources over HTTP, you should not open the app as a `file://` page. Use a local static server instead:
 
 ```bash
 python -m http.server 8000
-# then open http://localhost:8000
 ```
 
-## Deploying to Render
+Then open:
 
-Create a **Static Site** on Render, point it at this repository, and leave the build command
-empty. The publish directory is the repository root. No Python/Node runtime is required on
-the server.
+```text
+http://localhost:8000
+```
 
-## Limitations (read this before filing a bug)
+## Deploying
 
-- **No real shell**: `bash` and `pwsh` here are a high-fidelity emulator. Pipes, redirects,
-  variables, globs, aliases and tab completion work, but there is no native process, no
-  `fork`, no real filesystem permissions and no job control. `sleep` is capped at 10s.
-- **pygame is a subset**: only the 2D drawing primitives and event loop used by the demos
-  are implemented on top of the Canvas panel.
-- **tkinter is approximate**: widgets are DOM elements styled to look like Tk; `mainloop()`
-  returns immediately and events are delivered through the Window panel.
-- **No `input()` blocking**: Python's `input()` raises `EOFError`. Use "Run with input…"
-  to feed lines.
-- **JavaScript has no DOM**: the JS worker is intentionally isolated.
+This project is designed for a static host such as Render, GitHub Pages, Netlify, or any simple web server.
+
+Typical static deployment steps:
+
+- Connect the repository to a static hosting service
+- Use the repository root as the publish directory
+- Leave the build command blank
+- Ensure the site is served from HTTP (not local files)
+
+For a root-based hosting setup, the included service worker is expected to operate from the site root.
+
+## Important limitations
+
+- This is not a real operating-system shell; it is a browser-based shell emulator.
+- `bash` / `pwsh` behavior is intentionally approximated and does not provide full native process control.
+- There is no real filesystem permission model or real `fork` / `exec` behavior.
+- `input()` is not a blocking terminal experience the way a native Python runtime is.
+- `pygame` and `tkinter` support are browser approximations rather than full desktop behavior.
+- JavaScript execution is intentionally isolated and does not have access to the real DOM.
+- The app relies on browser APIs such as `localStorage`, `Worker`, and service workers.
+
+## Browser requirements
+
+This app works best in a modern browser with support for:
+
+- ES modules
+- Web Workers
+- Canvas / 2D graphics
+- localStorage
+- iframe sandboxing
 
 ## License
 
