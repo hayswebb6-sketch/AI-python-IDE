@@ -5,20 +5,20 @@
 :root {
   --topbar-h: 52px;
   --status-h: 26px;
-  --console-h: 300px;
+  --console-h: clamp(160px, 40vh, 320px);
   --sidebar-w: 238px;
 
-  --bg: #070a11;
-  --bg-soft: #0b0f18;
-  --panel: #0e1320;
-  --panel-2: #131a2a;
-  --panel-3: #182033;
-  --border: #1e2740;
-  --border-strong: #2b3a5e;
+  --bg: #080d14;
+  --bg-soft: #0d131d;
+  --panel: #121a25;
+  --panel-2: #182231;
+  --panel-3: #202d3d;
+  --border: #28394d;
+  --border-strong: #3a5068;
 
-  --text: #dbe3f4;
-  --text-dim: #9aa7c2;
-  --text-faint: #6b7896;
+  --text: #e6edf6;
+  --text-dim: #a8b7ca;
+  --text-faint: #77889d;
 
   --accent: #38bdf8;
   --accent-strong: #0ea5e9;
@@ -98,10 +98,9 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover { background: #94a3b8;
 
 .topbar {
   display: flex; align-items: center; gap: 10px; padding: 0 12px;
-  background: linear-gradient(180deg, #0c1120, #0a0e19);
+  background: linear-gradient(180deg, var(--panel), var(--bg-soft));
   border-bottom: 1px solid var(--border); min-width: 0;
 }
-html[data-theme="light"] .topbar { background: linear-gradient(180deg, #ffffff, #f1f5f9); }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); }
 .brand-mark { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--violet)); color: #041018; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.1; }
@@ -170,7 +169,11 @@ html[data-theme="light"] .topbar { background: linear-gradient(180deg, #ffffff, 
 .editor-wrap { position: relative; flex: 1; min-height: 0; }
 .editor { position: absolute; inset: 0; }
 .empty-state { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-faint); }
-.editor-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-dim); }
+.editor-loading {
+  position: absolute; inset: 0; z-index: 2;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: var(--editor-bg); color: var(--text-dim); font-size: 13px; text-align: center;
+}
 
 .resizer { cursor: ns-resize; background: var(--border); }
 .resizer:hover { background: var(--accent); }
@@ -322,3 +325,163 @@ html[data-theme="light"] .topbar { background: linear-gradient(180deg, #ffffff, 
 }
 
 .dialog .palette-list { max-height: 320px; }
+
+.editor-loading-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: editor-spin 0.8s linear infinite;
+}
+
+@keyframes editor-spin {
+  to { transform: rotate(360deg); }
+}
+
+.editor-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 14px 16px;
+  border: 0;
+  resize: none;
+  background: var(--editor-bg);
+  color: var(--text);
+  font: var(--editor-font-size)/1.6 var(--mono);
+  white-space: pre-wrap;
+  tab-size: 4;
+  caret-color: var(--accent);
+}
+
+.status-branch-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+@media (max-width: 640px) {
+  :root {
+    --topbar-h: 48px;
+    --status-h: 24px;
+  }
+
+  .topbar {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+
+  .brand {
+    gap: 7px;
+  }
+
+  .brand-mark {
+    width: 28px;
+    height: 28px;
+  }
+
+  .brand-text strong {
+    font-size: 13px;
+  }
+
+  .brand-text small,
+  .topbar .kbd-inline {
+    display: none;
+  }
+
+  .runtime {
+    min-width: 0;
+    max-width: 128px;
+    padding-inline: 8px;
+  }
+
+  #runtime-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar .icon-only {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+    justify-content: center;
+  }
+
+  .topbar .btn.primary {
+    padding-inline: 9px;
+  }
+
+  #btn-stop {
+    justify-content: center;
+    padding-inline: 8px;
+  }
+
+  #btn-stop span {
+    display: none;
+  }
+
+  .statusbar {
+    gap: 8px;
+    padding-inline: 8px;
+    font-size: 10px;
+    overflow: hidden;
+  }
+
+  #status-runtime,
+  #status-indent,
+  .status-encoding {
+    display: none;
+  }
+
+  .status-select {
+    min-width: 84px;
+  }
+
+  .console-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .console-tabs::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .topbar {
+    gap: 2px;
+    padding-inline: 6px;
+  }
+
+  .brand-text {
+    display: none;
+  }
+
+  .runtime {
+    max-width: 92px;
+    padding-inline: 6px;
+  }
+
+  .statusbar {
+    gap: 6px;
+    padding-inline: 6px;
+  }
+
+  #status-branch {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editor-loading-spinner {
+    animation: none;
+  }
+
+  .sidebar {
+    transition: none;
+  }
+}
