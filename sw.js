@@ -1,6 +1,17 @@
 /* Python IDE — offline cache */
-const CACHE_NAME = "pyide-v21";
-const PRECACHE = ["/", "/index.html", "/assets/app.js", "/assets/styles.css", "/assets/shell.js", "/assets/completions.js", "/assets/js-worker.js", "/assets/worker.js", "/assets/shims.py"];
+const APP_VERSION = "v22";
+const CACHE_NAME = `pyide-${APP_VERSION}`;
+const PRECACHE = [
+  "/",
+  "/index.html",
+  "/assets/app.js?v=22",
+  "/assets/styles.css?v=22",
+  "/assets/shell.js?v=22",
+  "/assets/completions.js?v=22",
+  "/assets/js-worker.js?v=22",
+  "/assets/worker.js?v=22",
+  "/assets/shims.py?v=22",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -19,6 +30,11 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
+
+  if (request.mode === "navigate") {
+    event.respondWith(fetch(request).catch(() => caches.match("/index.html")));
+    return;
+  }
 
   event.respondWith(
     caches.match(request).then((cached) => {
