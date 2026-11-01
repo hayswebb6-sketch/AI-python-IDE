@@ -14,7 +14,7 @@
 
 /* global loadPyodide */
 
-const PYODIDE_VERSION = "314.0.7";
+const PYODIDE_VERSION = "0.26.4";
 let CDN = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
 
 function loadPyodideScript() {
