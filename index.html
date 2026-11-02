@@ -15,12 +15,12 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=29">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" crossorigin="anonymous">
+  <link rel="stylesheet" href="assets/styles.css?v=30">
 
   <!-- Monaco's AMD loader (classic script: must run before app.js) -->
-  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
-  <script type="module" src="assets/app.js?v=29"></script>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js" crossorigin="anonymous"></script>
+  <script type="module" src="assets/app.js?v=30"></script>
 </head>
 <body>
 
@@ -93,7 +93,7 @@
         </div>
         <div class="menu" id="run-menu" role="menu" hidden>
           <button role="menuitem" data-run="active"><span>Run active file</span><kbd>Ctrl ↵</kbd></button>
-          <button role="menuitem" data-run="input"><span>Focus program input</span><kbd>Ctrl ⇧ ↵</kbd></button>
+          <button role="menuitem" data-run="terminal"><span>Focus terminal input</span><kbd>Ctrl ⇧ ↵</kbd></button>
         </div>
       </div>
 
@@ -156,12 +156,9 @@
     <!-- ── Bottom panel ────────────────────────────────────────────── -->
     <div class="resizer" id="resizer" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="Resize output panel"></div>
 
-    <section class="console" id="console" aria-label="Python input and output, terminal, and previews">
+    <section class="console" id="console" aria-label="Terminal and previews">
       <div class="console-head">
         <div class="console-tabs" role="tablist" aria-label="Output views">
-          <button class="console-tab" data-panel="io" id="tab-io" role="tab" aria-controls="panel-io" aria-selected="false">
-            <svg class="icon"><use href="#i-terminal"/></svg> I/O
-          </button>
           <button class="console-tab is-active" data-panel="terminal" id="tab-terminal" role="tab" aria-controls="panel-terminal" aria-selected="true">
             <svg class="icon"><use href="#i-terminal"/></svg> Terminal
           </button>
@@ -185,36 +182,14 @@
       </div>
 
       <div class="console-body">
-        <div class="panel panel-io" id="panel-io" role="tabpanel" aria-labelledby="tab-io" hidden>
-          <div class="python-io-layout">
-            <section class="python-io-section" aria-labelledby="python-input-title">
-              <div class="python-io-heading">
-                <label id="python-input-title" for="python-input">INPUT <span>STDIN</span></label>
-              </div>
-              <textarea class="python-io-input" id="python-input" spellcheck="false" autocapitalize="off"
-                        autocorrect="off" autocomplete="off" placeholder="Enter one value per line"
-                        aria-describedby="python-input-hint"></textarea>
-              <p class="python-io-hint" id="python-input-hint">Each line is sent to the next <code>input()</code> call.</p>
-            </section>
-            <section class="python-io-section" aria-labelledby="python-output-title">
-              <div class="python-io-heading">
-                <h3 id="python-output-title">OUTPUT</h3>
-                <span class="python-io-status" id="python-io-status" role="status" aria-live="polite">Ready</span>
-              </div>
-              <div class="python-output" id="python-output" role="log" aria-labelledby="python-output-title" aria-live="polite" aria-relevant="additions text">
-                <p class="python-output-placeholder">Press Run to see the program output.</p>
-              </div>
-            </section>
-          </div>
-        </div>
         <div class="panel panel-terminal is-active" id="panel-terminal" role="tabpanel" aria-labelledby="tab-terminal">
           <div class="terminal" id="terminal" tabindex="0" aria-live="polite" aria-label="Terminal output"></div>
-          <form class="prompt" id="prompt-form" autocomplete="off">
+          <div class="prompt" id="prompt-form" role="group" aria-label="Terminal input">
             <span class="prompt-path" id="prompt-path">~</span>
             <span class="prompt-sigil" id="prompt-sigil">$</span>
             <input class="prompt-input" id="prompt-input" spellcheck="false" autocapitalize="off"
                    autocorrect="off" placeholder="Type a command — try “help”" aria-label="Terminal command">
-          </form>
+          </div>
         </div>
 
         <div class="panel panel-canvas" id="panel-canvas" role="tabpanel" aria-labelledby="tab-canvas" hidden>

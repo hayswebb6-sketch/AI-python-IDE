@@ -34,9 +34,13 @@ function loadPyodideScript() {
   throw lastError || new Error("importScripts failed");
 }
 const PROJECT_DIR = "/home/pyodide/project";
+const STDIN_CONTROL_BYTES = Int32Array.BYTES_PER_ELEMENT * 2;
 
 let py = null;
 let stdinQueue = [];
+let stdinControl = null;
+let stdinData = null;
+let stdinUnavailableReported = false;
 let running = false;
 
 const post = (message) => self.postMessage(message);
@@ -56,10 +60,33 @@ self.ideBridge = {
     post({ type: kind, payload });
   },
 
-  /** Returns the next queued stdin line, or null when the queue is exhausted. */
+  /** Uses piped input first, then blocks this worker until the terminal sends a line. */
   stdin() {
-    if (!stdinQueue.length) return null;
-    return String(stdinQueue.shift());
+    if (stdinQueue.length) return String(stdinQueue.shift());
+    if (!stdinControl || !stdinData) {
+      if (!stdinUnavailableReported) {
+        post({ type: "stdin-unavailable" });
+        stdinUnavailableReported = true;
+      }
+      return null;
+    }
+
+    Atomics.store(stdinControl, 0, 0);
+    Atomics.store(stdinControl, 1, 0);
+    post({ type: "stdin-request" });
+
+    try {
+      while (Atomics.load(stdinControl, 0) === 0) Atomics.wait(stdinControl, 0, 0);
+    } catch {
+      post({ type: "stdin-unavailable" });
+      return null;
+    }
+
+    if (Atomics.load(stdinControl, 0) !== 1) return null;
+    const length = Math.max(0, Math.min(Atomics.load(stdinControl, 1), stdinData.length));
+    const value = new TextDecoder().decode(stdinData.subarray(0, length));
+    Atomics.store(stdinControl, 0, 0);
+    return value;
   },
 };
 
@@ -87,7 +114,7 @@ function boot() {
 
       const line = (channel) => (text) => {
         const value = String(text);
-        post({ type: channel, text: value.endsWith("\n") ? value : `${value}\n` });
+        if (value) post({ type: channel, text: value });
       };
 
       if (typeof py.setStdout === "function") {
@@ -258,6 +285,16 @@ async function handleRun(message) {
 
   running = true;
   stdinQueue = Array.isArray(message.stdin) ? message.stdin.map(String) : [];
+  stdinControl = null;
+  stdinData = null;
+  stdinUnavailableReported = false;
+  const inputBuffer = message.stdinBuffer;
+  if (typeof SharedArrayBuffer !== "undefined" && inputBuffer instanceof SharedArrayBuffer && inputBuffer.byteLength > STDIN_CONTROL_BYTES) {
+    stdinControl = new Int32Array(inputBuffer, 0, 2);
+    stdinData = new Uint8Array(inputBuffer, STDIN_CONTROL_BYTES);
+    Atomics.store(stdinControl, 0, 0);
+    Atomics.store(stdinControl, 1, 0);
+  }
   post({ type: "run-start", entry: message.entry });
 
   const started = performance.now();
@@ -292,6 +329,9 @@ async function handleRun(message) {
 
   const files = readWorkspace();
   running = false;
+  stdinQueue = [];
+  stdinControl = null;
+  stdinData = null;
   post({
     type: "done",
     ok,

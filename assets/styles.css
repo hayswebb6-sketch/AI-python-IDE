@@ -188,107 +188,6 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover { background: #94a3b8;
 .panel { position: absolute; inset: 0; display: none; }
 .panel.is-active { display: flex; flex-direction: column; }
 .panel-terminal { padding: 8px 12px; }
-.panel-io { padding: 8px 12px; }
-.python-io-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-  gap: 10px;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-}
-.python-io-section {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--panel);
-}
-.python-io-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 9px;
-  border-bottom: 1px solid var(--border);
-}
-.python-io-heading label,
-.python-io-heading h3 {
-  margin: 0;
-  color: var(--text-faint);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .08em;
-}
-.python-io-heading label { display: flex; align-items: center; gap: 8px; }
-.python-io-heading label span {
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: .05em;
-}
-.python-io-status {
-  color: var(--text-faint);
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: normal;
-  text-align: right;
-}
-.python-io-status[data-state="running"] { color: var(--accent); }
-.python-io-status[data-state="success"] { color: var(--green); }
-.python-io-status[data-state="error"] { color: var(--red); }
-.python-io-input {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  padding: 9px;
-  border: 0;
-  outline: none;
-  resize: none;
-  background: transparent;
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.python-io-input::placeholder { color: var(--text-faint); opacity: .75; }
-.python-io-input:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.python-io-hint {
-  margin: 0;
-  padding: 5px 9px 6px;
-  border-top: 1px solid var(--border);
-  color: var(--text-faint);
-  font-size: 10px;
-  line-height: 1.4;
-}
-.python-output {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 8px 9px;
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: var(--terminal-font-size);
-  line-height: 1.5;
-}
-.python-output-line { min-height: 1.5em; white-space: pre-wrap; overflow-wrap: anywhere; }
-.python-output-line.is-error { color: var(--red); }
-.python-output-line.is-meta { color: var(--text-faint); }
-.python-output-placeholder { margin: 0; color: var(--text-faint); }
-
-@media (max-width: 560px) {
-  .panel-io { padding: 6px; }
-  .python-io-layout {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(68px, .75fr) minmax(88px, 1.25fr);
-    gap: 6px;
-  }
-  .python-io-heading { padding: 5px 7px; }
-  .python-io-input, .python-output { padding: 7px; font-size: 11px; }
-  .python-io-hint { padding: 4px 7px; font-size: 9px; }
-}
 .terminal { flex: 1; overflow: auto; font-family: var(--mono); font-size: var(--terminal-font-size); line-height: 1.5; }
 .term-line { white-space: pre-wrap; word-break: break-word; }
 .term-line.cmd { color: var(--green); }
@@ -299,9 +198,14 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover { background: #94a3b8;
 .term-line .ansi { }
 
 .prompt { display: flex; align-items: center; gap: 0; padding: 6px 0; border-top: 1px solid var(--border); font-family: var(--mono); }
+.prompt.is-inline { display: inline-flex; width: min(48ch, 60vw); max-width: 100%; padding: 0; border: 0; vertical-align: middle; }
+.prompt.is-inline .prompt-path { display: none; }
+.prompt.is-inline .prompt-sigil { margin: 0 6px 0 0; }
 .prompt-path { color: var(--accent); font-weight: 600; margin-right: 4px; white-space: nowrap; }
 .prompt-sigil { color: var(--green); font-weight: 700; margin-right: 8px; }
 .prompt-input { flex: 1; background: transparent; border: 0; outline: none; color: var(--text); font-family: var(--mono); font-size: var(--terminal-font-size); }
+.prompt.is-inline .prompt-input { width: 0; min-width: 8ch; max-width: 48ch; }
+.prompt-input:disabled { color: var(--text-dim); cursor: wait; }
 
 .panel-canvas { align-items: center; justify-content: center; padding: 10px; }
 .canvas-stage { width: 100%; height: 100%; display: grid; place-items: center; }
