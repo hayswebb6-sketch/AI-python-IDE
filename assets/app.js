@@ -9,8 +9,8 @@
  *   - supervising the Python and JavaScript workers
  */
 
-import { registerPythonIntelliSense } from "./completions.js?v=26";
-import { createShell } from "./shell.js?v=26";
+import { registerPythonIntelliSense } from "./completions.js?v=27";
+import { createShell } from "./shell.js?v=27";
 
 const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
 const STORAGE_KEY = "pyide.workspace.v2";
@@ -193,6 +193,7 @@ const dom = {
   batchNotepadOpen: $("batch-notepad-open"),
   batchNotepadFilename: $("batch-notepad-filename"),
   batchNotepadPreview: $("batch-notepad-preview"),
+  batchCalcDisplay: $("batch-calc-display"),
   batchCommandForm: $("batch-command-form"),
   batchCommandInput: $("batch-command-input"),
   batchPromptLabel: $("batch-prompt-label"),
@@ -263,8 +264,10 @@ const state = {
   jsWorker: null,
   jsRunning: false,
   batchWorker: null,
-  batchRunning: false,
   batchInitialized: false,
+  batchRunning: false,
+  batchRunKind: "",
+  batchCalc: { display: "0", accumulator: null, operator: null, waitingForOperand: false },
   running: false,
   pendingRun: null,
 };
@@ -501,11 +504,16 @@ const LANGUAGE_DOCS = {
   shell: "https://www.gnu.org/software/bash/manual/",
   powershell: "https://learn.microsoft.com/en-us/powershell/",
   batch: "https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/windows-commands",
+  yaml: "https://yaml.org/spec/1.2.2/",
+  xml: "https://developer.mozilla.org/en-US/docs/Web/XML",
+  php: "https://www.php.net/manual/en/",
+  ruby: "https://docs.ruby-lang.org/en/",
+  toml: "https://toml.io/en/",
   c: "https://en.cppreference.com/w/c",
   cpp: "https://en.cppreference.com/w/cpp",
   java: "https://docs.oracle.com/en/java/",
   csharp: "https://learn.microsoft.com/en-us/dotnet/csharp/",
-  go: "https://go.dev/doc/", 
+  go: "https://go.dev/doc/",
   rust: "https://doc.rust-lang.org/",
   sql: "https://www.sqlite.org/docs.html",
   lua: "https://www.lua.org/manual/5.4/",
@@ -530,7 +538,6 @@ const LANGUAGE_DOCS = {
   ini: "https://en.wikipedia.org/wiki/INI_file",
   vb: "https://learn.microsoft.com/en-us/dotnet/visual-basic/",
   abap: "https://help.sap.com/docs/abap",
-  typescript: "https://www.typescriptlang.org/docs/",
 };
 const LANGUAGE_DEFS = {
   go: { label: "Go", short: "go", runnable: false },
@@ -562,6 +569,7 @@ const LANGUAGE_DEFS = {
   proto: { label: "Protocol Buffers", short: "proto", runnable: false },
   hcl: { label: "HCL/Terraform", short: "tf", runnable: false },
   ini: { label: "INI/Config", short: "ini", runnable: false },
+  toml: { label: "TOML", short: "toml", runnable: false },
   vb: { label: "Visual Basic", short: "vb", runnable: false },
   abap: { label: "ABAP", short: "abap", runnable: false },
   batch: { label: "Batch", short: "bat", runnable: true },
@@ -619,7 +627,7 @@ const EXTENSION_LANGUAGE = {
   graphql: "graphql", gql: "graphql",
   proto: "proto",
   tf: "hcl", tfvars: "hcl",
-  ini: "ini", toml: "ini", cfg: "ini", conf: "ini",
+  ini: "ini", toml: "toml", cfg: "ini", conf: "ini",
   vb: "vb",
   abap: "abap",
   bat: "batch",
@@ -652,9 +660,6 @@ const EXTENSION_LANGUAGE = {
   txt: "plaintext",
   csv: "plaintext",
   log: "plaintext",
-  yml: "plaintext",
-  yaml: "plaintext",
-  toml: "plaintext",
 };
 
 function languageFor(name) {
@@ -1776,11 +1781,13 @@ dom.promptForm.addEventListener("click", (event) => {
  * ========================================================================== */
 
 function updateRunButtons() {
-  const running = state.runtime === "running" || state.jsRunning;
+  const running = state.runtime === "running" || state.jsRunning || state.batchRunning;
   const hasActive = Boolean(state.active);
   dom.btnRun.disabled = running || !hasActive;
   dom.btnRunMenu.disabled = running || !hasActive;
   dom.btnStop.disabled = !running;
+  if (dom.batchStop) dom.batchStop.disabled = !state.batchRunning;
+  if (dom.batchCreateScript) dom.batchCreateScript.disabled = state.batchRunning;
 }
 
 function setRuntime(next, text) {
@@ -2673,6 +2680,366 @@ async function runLuaFile(name) {
   worker.postMessage({ type: "run", code });
 }
 
+function appendBatchOutput(text, kind = "stdout") {
+  if (!dom.batchOutput || text === "") return;
+  const line = document.createElement("div");
+  const safeKind = ["command", "stderr", "system", "success"].includes(kind) ? kind : "stdout";
+  line.className = `batch-line batch-line-${safeKind}`;
+  line.textContent = String(text ?? "");
+  dom.batchOutput.append(line);
+  while (dom.batchOutput.children.length > 700) dom.batchOutput.firstElementChild?.remove();
+  dom.batchOutput.scrollTop = dom.batchOutput.scrollHeight;
+}
+
+function batchWorkspaceSnapshot() {
+  snapshotActive();
+  return {
+    files: Object.fromEntries(state.files),
+    dirs: [...state.dirs],
+    username: settings.username || "guest",
+  };
+}
+
+function startBatchWorker() {
+  if (state.batchWorker) return state.batchWorker;
+  try {
+    const worker = new Worker(new URL("./batch-worker.js?v=27", import.meta.url));
+    state.batchWorker = worker;
+    state.batchInitialized = false;
+    worker.addEventListener("message", handleBatchWorkerMessage);
+    worker.addEventListener("error", (event) => {
+      state.batchRunning = false;
+      state.batchWorker?.terminate();
+      state.batchWorker = null;
+      state.batchInitialized = false;
+      state.batchRunKind = "";
+      appendBatchOutput(`Batch PC stopped: ${event.message || "worker error"}\n`, "stderr");
+      updateRunButtons();
+    });
+    worker.postMessage({ type: "init", ...batchWorkspaceSnapshot() });
+    return worker;
+  } catch (error) {
+    appendBatchOutput(`Batch PC could not start: ${error.message}\n`, "stderr");
+    toast("Batch PC could not start.", "error");
+    return null;
+  }
+}
+
+function syncBatchWorker() {
+  if (!state.batchWorker) return startBatchWorker();
+  state.batchWorker.postMessage({ type: "sync", ...batchWorkspaceSnapshot() });
+  return state.batchWorker;
+}
+
+function openBatchPC(app = "cmd") {
+  if (!dom.batchPcDialog) return;
+  snapshotActive();
+  if (!dom.batchPcDialog.open) dom.batchPcDialog.showModal();
+  openBatchApp(app);
+  if (state.batchWorker) syncBatchWorker();
+  else startBatchWorker();
+}
+
+function openBatchApp(app) {
+  const titles = {
+    cmd: "Command Prompt",
+    files: "Files",
+    notepad: "Notepad",
+    tasks: "Task Manager",
+    calc: "Calculator",
+    settings: "About this PC",
+  };
+  if (!titles[app]) return;
+  document.querySelectorAll("[data-batch-view]").forEach((view) => {
+    view.hidden = view.dataset.batchView !== app;
+  });
+  document.querySelectorAll(".batch-desktop-shortcut").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.batchApp === app));
+  });
+  if (dom.batchWindowTitle) dom.batchWindowTitle.textContent = titles[app];
+  $("batch-taskbar-active").textContent = titles[app];
+  if (dom.batchStartMenu) dom.batchStartMenu.hidden = true;
+  dom.batchStart?.setAttribute("aria-expanded", "false");
+
+  if (app === "files") renderBatchFiles();
+  if (app === "tasks") renderBatchTasks();
+  if (app === "calc") renderBatchCalculator();
+  if (app === "notepad") {
+    const name = state.active;
+    dom.batchNotepadFilename.textContent = name || "No file is open";
+    dom.batchNotepadPreview.textContent = name
+      ? state.files.get(name) ?? ""
+      : "Open a file from Files, or create a .bat script to get started.";
+  }
+  if (app === "cmd" && dom.batchPcDialog?.open) {
+  requestAnimationFrame(() => dom.batchCommandInput?.focus({ preventScroll: true }));
+  }
+  if (app === "calc" && dom.batchPcDialog?.open) {
+  requestAnimationFrame(() => document.querySelector('[data-batch-view="calc"] [data-calc-digit]')?.focus({ preventScroll: true }));
+  }
+}
+
+function renderBatchFiles() {
+  if (!dom.batchFileList) return;
+  dom.batchFileList.replaceChildren();
+  const files = [...state.files.keys()].sort((left, right) => left.localeCompare(right));
+  if (!files.length) {
+    const empty = document.createElement("li");
+    empty.className = "batch-empty";
+    empty.textContent = "The virtual workspace is empty.";
+    dom.batchFileList.append(empty);
+    return;
+  }
+  for (const name of files) {
+    const item = document.createElement("li");
+    item.className = "batch-file-row";
+    const filename = document.createElement("span");
+    filename.textContent = name;
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "btn ghost small";
+    openButton.textContent = "Open";
+    openButton.addEventListener("click", () => {
+      dom.batchPcDialog?.close();
+      openFile(name);
+    });
+    item.append(filename, openButton);
+    dom.batchFileList.append(item);
+  }
+}
+
+function createBatchScript() {
+  let suffix = 1;
+  let filename = TEMPLATES.batch.name;
+  while (state.files.has(filename)) {
+    suffix += 1;
+    filename = `hello-${suffix}.bat`;
+  }
+  if (createFile(filename, TEMPLATES.batch.content)) {
+    renderBatchFiles();
+    openBatchApp("notepad");
+  }
+}
+
+function renderBatchCalculator() {
+  if (dom.batchCalcDisplay) dom.batchCalcDisplay.textContent = state.batchCalc.display;
+}
+
+function batchCalculatorResult(left, operator, right) {
+  switch (operator) {
+    case "add": return left + right;
+    case "subtract": return left - right;
+    case "multiply": return left * right;
+    case "divide": return right === 0 ? null : left / right;
+    default: return null;
+  }
+}
+
+function formatBatchCalculatorValue(value) {
+  if (!Number.isFinite(value)) return "Error";
+  return Number(value.toPrecision(12)).toString();
+}
+
+function handleBatchCalculatorButton(button) {
+  const calculator = state.batchCalc;
+  const digit = button.dataset.calcDigit;
+  if (digit !== undefined) {
+    const next = calculator.waitingForOperand || calculator.display === "Error"
+      ? digit === "." ? "0." : digit
+      : digit === "."
+        ? calculator.display.includes(".") ? calculator.display : `${calculator.display}.`
+        : calculator.display === "0" ? digit : `${calculator.display}${digit}`;
+    if (next.length <= 18) calculator.display = next;
+    calculator.waitingForOperand = false;
+    renderBatchCalculator();
+    return;
+  }
+
+  if (button.dataset.calcAction === "clear") {
+    state.batchCalc = { display: "0", accumulator: null, operator: null, waitingForOperand: false };
+    renderBatchCalculator();
+    return;
+  }
+  if (button.dataset.calcAction === "backspace") {
+    if (calculator.waitingForOperand || calculator.display === "Error") {
+      calculator.display = "0";
+      calculator.waitingForOperand = false;
+    } else {
+      calculator.display = calculator.display.length > 1 ? calculator.display.slice(0, -1) : "0";
+      if (calculator.display === "-" || calculator.display === "") calculator.display = "0";
+    }
+    renderBatchCalculator();
+    return;
+  }
+
+  const operation = button.dataset.calcOperation;
+  if (operation) {
+    const current = Number(calculator.display);
+    if (!Number.isFinite(current)) return;
+    if (calculator.operator && calculator.accumulator !== null && !calculator.waitingForOperand) {
+      const result = batchCalculatorResult(calculator.accumulator, calculator.operator, current);
+      calculator.display = result === null ? "Error" : formatBatchCalculatorValue(result);
+      calculator.accumulator = result;
+    } else if (calculator.accumulator === null) {
+      calculator.accumulator = current;
+    }
+    calculator.operator = operation;
+    calculator.waitingForOperand = true;
+    renderBatchCalculator();
+    return;
+  }
+
+  if (button.dataset.calcAction === "equals" && calculator.operator && calculator.accumulator !== null) {
+    const right = calculator.waitingForOperand ? calculator.accumulator : Number(calculator.display);
+    const result = batchCalculatorResult(calculator.accumulator, calculator.operator, right);
+    calculator.display = result === null ? "Error" : formatBatchCalculatorValue(result);
+    calculator.accumulator = result;
+    calculator.operator = null;
+    calculator.waitingForOperand = true;
+    renderBatchCalculator();
+  }
+}
+
+function renderBatchTasks() {
+  if (!dom.batchTaskList) return;
+  dom.batchTaskList.replaceChildren();
+  const activeApp = $("batch-taskbar-active")?.textContent || "Command Prompt";
+  const tasks = [
+    { pid: "100", name: "PyIDE Virtual PC", status: "Running" },
+    { pid: "101", name: activeApp, status: "Open" },
+    { pid: "102", name: "Batch interpreter", status: state.batchRunning ? "Running" : "Idle" },
+  ];
+  for (const task of tasks) {
+    const item = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = `${task.pid} · ${task.name}`;
+    const status = document.createElement("span");
+    status.textContent = task.status;
+    item.append(name, status);
+    dom.batchTaskList.append(item);
+  }
+}
+
+function applyBatchWorkspace(result) {
+  if (result.files && typeof result.files === "object") {
+    const incoming = new Map(Object.entries(result.files).map(([name, content]) => [name, String(content)]));
+    for (const name of [...state.files.keys()]) {
+      if (incoming.has(name)) continue;
+      const current = state.files.get(name) ?? "";
+      const model = state.models.get(name);
+      const editorValue = state.active === name ? model?.getValue() ?? state.editor?.getValue() : current;
+      if (state.active === name && editorValue !== current) continue;
+      shellDeleteFile(name);
+    }
+    for (const [name, content] of incoming) {
+      const current = state.files.get(name);
+      if (current === content) continue;
+      const model = state.models.get(name);
+      const editorValue = state.active === name ? model?.getValue() ?? state.editor?.getValue() : current;
+      if (state.active === name && current !== undefined && editorValue !== current) {
+        state.files.set(name, content);
+        continue;
+      }
+      shellWriteFile(name, content);
+    }
+  }
+  if (Array.isArray(result.dirs)) {
+    state.dirs = new Set(result.dirs.map((dir) => `/${String(dir).replace(/^\/+|\/+$/g, "")}`));
+    if (!state.dirs.size) state.dirs.add("/");
+  }
+  renderBatchFiles();
+  renderBreadcrumbs();
+  scheduleSave();
+}
+
+function handleBatchWorkerMessage({ data = {} }) {
+  if (data.type === "output") {
+    appendBatchOutput(data.text, data.kind);
+    return;
+  }
+  if (data.type === "clear") {
+    dom.batchOutput?.replaceChildren();
+    return;
+  }
+  if (data.type === "input-request") {
+    askText({
+      title: data.title || "Batch input",
+      label: data.label || "Enter a value",
+      hint: data.hint || "This value stays in the virtual PC session.",
+      inputType: data.inputType === "password" ? "password" : "text",
+      confirm: data.confirm || "Enter",
+    }).then((value) => state.batchWorker?.postMessage({ type: "input-response", id: data.id, value }));
+    return;
+  }
+  if (data.type === "launch-app") {
+    openBatchApp(data.app);
+    return;
+  }
+  if (data.type === "ready") state.batchInitialized = true;
+  if (data.prompt && dom.batchPromptLabel) dom.batchPromptLabel.textContent = data.prompt;
+  if (data.title && dom.batchWindowTitle && dom.batchWindowTitle.textContent === "Command Prompt") {
+    dom.batchWindowTitle.textContent = data.title;
+  }
+  if (data.type !== "complete") return;
+
+  applyBatchWorkspace(data);
+  state.batchRunning = false;
+  if (state.batchRunKind === "script") {
+    appendBatchOutput(
+      data.stopped ? "Batch script stopped.\n" : `Batch script finished with exit code ${data.errorlevel ?? 0}.\n`,
+      data.stopped ? "system" : data.errorlevel ? "stderr" : "success"
+    );
+  }
+  state.batchRunKind = "";
+  updateRunButtons();
+  if (document.querySelector('[data-batch-view="tasks"]:not([hidden])')) renderBatchTasks();
+  if (dom.batchPcDialog?.open && !document.querySelector('[data-batch-view="cmd"][hidden]')) {
+    dom.batchCommandInput?.focus({ preventScroll: true });
+  }
+}
+
+function runBatchCommand(line) {
+  const command = String(line || "").trim();
+  if (!command || state.batchRunning) return;
+  const worker = syncBatchWorker();
+  if (!worker) return;
+  const prompt = dom.batchPromptLabel?.textContent || "C:\\workspace>";
+  appendBatchOutput(`${prompt} ${command}\n`, "command");
+  dom.batchCommandInput.value = "";
+  state.batchRunKind = "command";
+  state.batchRunning = true;
+  updateRunButtons();
+  worker.postMessage({ type: "command", line: command });
+}
+
+function runBatchFile(name) {
+  const filename = String(name || "");
+  if (!state.files.has(filename)) {
+    toast(`Batch file not found: ${filename}`, "error");
+    return false;
+  }
+  if (state.batchRunning) {
+    toast("A Batch command is already running.", "error");
+    return false;
+  }
+  openBatchPC("cmd");
+  const worker = state.batchWorker;
+  if (!worker) return false;
+  const code = state.files.get(filename) ?? "";
+  state.snapshots.set(filename, code);
+  renderTabs();
+  state.batchRunKind = "script";
+  state.batchRunning = true;
+  updateRunButtons();
+  worker.postMessage({
+    type: "run",
+    filename,
+    code,
+    ...batchWorkspaceSnapshot(),
+  });
+  return true;
+}
+
 function runActive() {
   if (!state.active) {
     toast("Open a file first.", "error");
@@ -2768,7 +3135,9 @@ async function runShellFile(name) {
   showConsole("terminal");
   writeTerminal(` ${name}`, "cmd");
   for (const line of String(code).split(/\r?\n/)) {
-    if (line.trim()) await shell.execute(line);
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    await shell.execute(line);
   }
   writeTerminal("Shell script finished.", "ok");
 }
@@ -3117,7 +3486,61 @@ dom.btnDocs?.addEventListener("click", () => {
   if (url) window.open(url, "_blank", "noopener");
   else toast("No documentation link for this language.", "error");
 });
+dom.btnBatchPc?.addEventListener("click", () => openBatchPC("cmd"));
+dom.batchPcClose?.addEventListener("click", () => dom.batchPcDialog?.close());
+dom.batchStart?.addEventListener("click", () => {
+  const expanded = dom.batchStart.getAttribute("aria-expanded") === "true";
+  dom.batchStartMenu.hidden = expanded;
+  dom.batchStart.setAttribute("aria-expanded", String(!expanded));
+});
+dom.batchPcDialog?.addEventListener("click", (event) => {
+  const calculatorButton = event.target.closest("[data-calc-digit], [data-calc-operation], [data-calc-action]");
+  if (calculatorButton) {
+    handleBatchCalculatorButton(calculatorButton);
+    return;
+  }
+  const appButton = event.target.closest("[data-batch-app]");
+  if (appButton) {
+    openBatchApp(appButton.dataset.batchApp);
+    return;
+  }
+  if (!event.target.closest("#batch-start, #batch-start-menu")) {
+    dom.batchStartMenu.hidden = true;
+    dom.batchStart.setAttribute("aria-expanded", "false");
+  }
+});
+dom.batchPcDialog?.addEventListener("close", () => {
+  dom.batchStartMenu.hidden = true;
+  dom.batchStart?.setAttribute("aria-expanded", "false");
+  if (state.batchRunning) state.batchWorker?.postMessage({ type: "stop" });
+});
+dom.batchCommandForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  runBatchCommand(dom.batchCommandInput.value);
+});
+dom.batchStop?.addEventListener("click", () => {
+  if (!state.batchRunning) return;
+  state.batchWorker?.postMessage({ type: "stop" });
+  appendBatchOutput("Stop requested.\n", "system");
+});
+dom.batchCreateScript?.addEventListener("click", createBatchScript);
+dom.batchNotepadOpen?.addEventListener("click", () => {
+  if (!state.active) {
+    toast("Open a file from Files first.");
+    openBatchApp("files");
+    return;
+  }
+  const filename = state.active;
+  dom.batchPcDialog?.close();
+  openFile(filename);
+});
+
 dom.btnStop.addEventListener("click", () => {
+  if (state.batchRunning && state.batchWorker) {
+    state.batchWorker.postMessage({ type: "stop" });
+    appendBatchOutput("Stop requested.\n", "system");
+    return;
+  }
   if (state.jsRunning && state.jsWorker) {
     state.jsWorker.terminate();
     state.jsWorker = null;
@@ -3780,6 +4203,14 @@ const LANGUAGE_COMPLETIONS = {
     keywords: ["true","false","yes","no","on","off","null"],
     snippets: [
       { label: "section", insertText: "[${1:section}]\n${2:key}=${3:value}", detail: "config section" },
+    ],
+  },
+  toml: {
+    keywords: ["true","false","inf","nan"],
+    snippets: [
+      { label: "section", insertText: "[${1:section}]\n${2:key} = ${3:value}", detail: "TOML section" },
+      { label: "array", insertText: "${1:key} = [\n  ${2:value},\n]", detail: "TOML array" },
+      { label: "table-array", insertText: "[[${1:items}]]\n${2:name} = \"${3:value}\"", detail: "array of tables" },
     ],
   },
   vb: {

@@ -142,8 +142,7 @@ function initialize(data = {}) {
     outputLimited: false,
     steps: 0,
   };
-  ensureParentDirs("workspace/.keep");
-  output("PyIDE Batch PC [simulated]\nType help for the virtual command list. No host commands or disk access are available.\n", "system");
+  emit("PyIDE Batch PC [simulated]\nType help for the virtual command list. No host commands or disk access are available.\n", "system");
   sendState("ready");
 }
 
@@ -184,9 +183,11 @@ function expandVariables(value, loopVariables = {}) {
   for (const [name, replacement] of Object.entries(loopVariables)) {
     result = result.replace(new RegExp(`%%${name}`, "gi"), String(replacement));
   }
-  return result
+  result = result.replace(/%%([A-Za-z])/g, (_, name) => `\u0000BATCH_FOR_${name}\u0000`);
+  result = result
     .replace(/%([^%]+)%/g, (_, name) => machine.vars[name.toUpperCase()] ?? "")
     .replace(/!([^!]+)!/g, (_, name) => machine.vars[name.toUpperCase()] ?? "");
+  return result.replace(/\u0000BATCH_FOR_([A-Za-z])\u0000/g, "%%$1");
 }
 
 function splitArguments(value) {
@@ -316,8 +317,11 @@ function parseBatchCondition(condition) {
     const exists = virtualPathExists(normalizePath(match[2]));
     return Boolean(match[1]) ? !exists : exists;
   }
-  match = text.match(/^defined\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
-  if (match) return Object.hasOwn(machine.vars, match[1].toUpperCase());
+  match = text.match(/^(not\s+)?defined\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
+  if (match) {
+    const defined = Object.hasOwn(machine.vars, match[2].toUpperCase());
+    return Boolean(match[1]) ? !defined : defined;
+  }
   match = text.match(/^(?:\/i\s+)?(".*?"|\S+)\s*(==|equ|neq|lss|leq|gtr|geq)\s*(".*?"|\S+)$/i);
   if (match) {
     const left = match[1].replace(/^"|"$/g, "");
@@ -333,8 +337,11 @@ function parseBatchCondition(condition) {
     if (operator === "gtr") return a > b;
     return a >= b;
   }
-  match = text.match(/^errorlevel\s+(\d+)$/i);
-  if (match) return machine.errorlevel >= Number(match[1]);
+  match = text.match(/^(not\s+)?errorlevel\s+(\d+)$/i);
+  if (match) {
+    const reached = machine.errorlevel >= Number(match[2]);
+    return Boolean(match[1]) ? !reached : reached;
+  }
   return false;
 }
 
@@ -388,7 +395,7 @@ async function executeLine(rawLine, { script = false, loopVariables = {}, depth 
   machine.errorlevel = Number(result.code) || 0;
   machine.vars.ERRORLEVEL = String(machine.errorlevel);
   machine.vars.CD = displayPath();
-  return result;
+  return { ...result, out: undefined, err: undefined };
 }
 
 async function dispatchCommand(commandText, context) {
@@ -415,22 +422,27 @@ async function dispatchCommand(commandText, context) {
     case "set":
       return await setCommand(rest);
     case "if": {
-      const conditionMatch = rest.match(/^(.*?)(?:\s+\(([^]*)\)|\s+(.+))$/);
+      const conditionMatch = rest.match(/^(?:not\s+)?(?:exist\s+(?:"[^"]*"|\S+)|defined\s+[A-Za-z_][A-Za-z0-9_]*|errorlevel\s+\d+)|^(?:\/i\s+)?(?:"[^"]*"|\S+)\s*(?:==|equ|neq|lss|leq|gtr|geq)\s*(?:"[^"]*"|\S+)/i);
       if (!conditionMatch) return { code: 1, err: "The IF command has an invalid format.\n" };
-      const condition = conditionMatch[1].trim();
-      const block = conditionMatch[2];
-      const inline = conditionMatch[3];
+      const condition = conditionMatch[0].trim();
+      const action = rest.slice(conditionMatch[0].length).trim();
+      if (!action) return { code: 1, err: "The IF command needs a command or block after its condition.\n" };
       const isTrue = parseBatchCondition(condition);
-      if (!isTrue) return { code: 0 };
-      if (block !== undefined) {
-        const body = block.replace(/\)\s*$/, "");
-        for (const line of body.split(/\r?\n/)) {
+      const elseBlock = action.match(/^\(([\s\S]*?)\)\s*else\s*\(([\s\S]*)\)$/i);
+      const block = elseBlock || action.match(/^\(([\s\S]*)\)$/);
+      if (block) {
+        const selectedBody = elseBlock ? (isTrue ? elseBlock[1] : elseBlock[2]) : isTrue ? block[1] : "";
+        if (!selectedBody.trim()) return { code: 0 };
+        for (const line of selectedBody.split(/\r?\n/)) {
           const outcome = await executeLine(line, { script: true, loopVariables, depth: depth + 1 });
           if (outcome.jumpLabel || outcome.callLabel || outcome.return || outcome.exit) return outcome;
         }
         return { code: machine.errorlevel };
       }
-      return executeLine(inline, { script: true, loopVariables, depth: depth + 1 });
+      const inlineElse = action.match(/^([\s\S]+?)\s+else\s+([\s\S]+)$/i);
+      const selectedCommand = inlineElse ? (isTrue ? inlineElse[1] : inlineElse[2]) : isTrue ? action : "";
+      if (!selectedCommand) return { code: 0 };
+      return executeLine(selectedCommand, { script: true, loopVariables, depth: depth + 1 });
     }
     case "for":
       return runFor(rest, { script, loopVariables, depth });
@@ -761,6 +773,7 @@ async function runScript(source, filename = "script.bat", depth = 0) {
 }
 
 async function processCommand(line) {
+  outputLength = 0;
   machine.stopRequested = false;
   machine.outputLimited = false;
   machine.steps = 0;
@@ -799,6 +812,7 @@ async function handleMessage(message) {
   }
   if (message.type === "run") {
     if (!machine) initialize(message);
+    outputLength = 0;
     syncWorkspace(message);
     machine.stopRequested = false;
     machine.outputLimited = false;

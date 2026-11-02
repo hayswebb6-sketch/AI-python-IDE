@@ -16,11 +16,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=26">
+  <link rel="stylesheet" href="assets/styles.css?v=27">
 
   <!-- Monaco's AMD loader (classic script: must run before app.js) -->
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
-  <script type="module" src="assets/app.js?v=26"></script>
+  <script type="module" src="assets/app.js?v=27"></script>
 </head>
 <body>
 
@@ -129,7 +129,7 @@
           <button class="btn ghost small" id="btn-export" title="Download the active file">
             <svg class="icon"><use href="#i-download"/></svg> Export
           </button>
-          <input type="file" id="file-input" accept=".py,.txt,.md,.json,.csv,.html,.js,.jsx,.ts,.tsx,.css,.scss,.sql,.lua,.sh,.bash,.bat,.cmd,.ps1,.yml,.yaml,.xml,.php,.rb,.cs,.go,.rs,.java,.cpp,.c" multiple hidden>
+          <input type="file" id="file-input" accept=".py,.txt,.md,.json,.csv,.html,.htm,.js,.jsx,.ts,.tsx,.css,.scss,.less,.sql,.lua,.sh,.bash,.bat,.cmd,.ps1,.psm1,.yml,.yaml,.xml,.php,.rb,.cs,.go,.rs,.java,.cpp,.c,.h,.hpp,.cc,.cxx,.swift,.kt,.kts,.r,.dart,.pl,.scala,.sc,.jl,.fs,.fsx,.clj,.cljs,.m,.pas,.coffee,.dockerfile,.graphql,.gql,.proto,.tf,.tfvars,.ini,.toml,.cfg,.conf,.vb,.abap" multiple hidden>
         </div>
       </aside>
 
@@ -281,6 +281,9 @@
           <button class="batch-desktop-shortcut" type="button" data-batch-app="notepad" aria-pressed="false">
             <span class="batch-shortcut-glyph batch-glyph-notepad" aria-hidden="true">TXT</span><span>Notepad</span>
           </button>
+          <button class="batch-desktop-shortcut" type="button" data-batch-app="calc" aria-pressed="false">
+            <span class="batch-shortcut-glyph batch-glyph-calc" aria-hidden="true">CALC</span><span>Calculator</span>
+          </button>
           <button class="batch-desktop-shortcut" type="button" data-batch-app="tasks" aria-pressed="false">
             <span class="batch-shortcut-glyph batch-glyph-tasks" aria-hidden="true">SYS</span><span>Task Manager</span>
           </button>
@@ -324,6 +327,33 @@
               <div class="batch-notepad-preview" id="batch-notepad-preview" aria-live="polite">Choose a file from Files, then open it in the IDE editor.</div>
             </section>
 
+            <section class="batch-app-view batch-calc-view" data-batch-view="calc" aria-label="Virtual Calculator" hidden>
+              <div class="batch-calculator">
+                <div class="batch-app-heading"><div><h3>Calculator</h3><p>Basic arithmetic in the virtual PC.</p></div></div>
+                <output class="batch-calculator-display" id="batch-calc-display" aria-live="polite" aria-label="Calculator display">0</output>
+                <div class="batch-calculator-grid" role="group" aria-label="Calculator keys">
+                  <button type="button" data-calc-action="clear" aria-label="Clear">C</button>
+                  <button type="button" data-calc-action="backspace" aria-label="Backspace">⌫</button>
+                  <button type="button" data-calc-operation="divide" aria-label="Divide">÷</button>
+                  <button type="button" data-calc-operation="multiply" aria-label="Multiply">×</button>
+                  <button type="button" data-calc-digit="7">7</button>
+                  <button type="button" data-calc-digit="8">8</button>
+                  <button type="button" data-calc-digit="9">9</button>
+                  <button type="button" data-calc-operation="subtract" aria-label="Subtract">−</button>
+                  <button type="button" data-calc-digit="4">4</button>
+                  <button type="button" data-calc-digit="5">5</button>
+                  <button type="button" data-calc-digit="6">6</button>
+                  <button type="button" data-calc-operation="add" aria-label="Add">+</button>
+                  <button type="button" data-calc-digit="1">1</button>
+                  <button type="button" data-calc-digit="2">2</button>
+                  <button type="button" data-calc-digit="3">3</button>
+                  <button class="batch-calculator-equals" type="button" data-calc-action="equals" aria-label="Equals">=</button>
+                  <button class="batch-calculator-zero" type="button" data-calc-digit="0">0</button>
+                  <button type="button" data-calc-digit=".">.</button>
+                </div>
+              </div>
+            </section>
+
             <section class="batch-app-view batch-tasks-view" data-batch-view="tasks" aria-label="Virtual Task Manager" hidden>
               <div class="batch-app-heading"><div><h3>Task Manager</h3><p>Only simulated apps in this virtual PC appear here.</p></div></div>
               <ul class="batch-task-list" id="batch-task-list" aria-label="Virtual processes"></ul>
@@ -353,6 +383,7 @@
           <button type="button" data-batch-app="cmd">Command Prompt</button>
           <button type="button" data-batch-app="files">Files</button>
           <button type="button" data-batch-app="notepad">Notepad</button>
+          <button type="button" data-batch-app="calc">Calculator</button>
           <button type="button" data-batch-app="tasks">Task Manager</button>
           <button type="button" data-batch-app="settings">About this PC</button>
         </nav>
