@@ -16,11 +16,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" crossorigin="anonymous">
-  <link rel="stylesheet" href="assets/styles.css?v=31">
+  <link rel="stylesheet" href="assets/styles.css?v=32">
 
   <!-- Monaco's AMD loader (classic script: must run before app.js) -->
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js" crossorigin="anonymous"></script>
-  <script type="module" src="assets/app.js?v=31"></script>
+  <script type="module" src="assets/app.js?v=32"></script>
 </head>
 <body>
 
@@ -207,7 +207,7 @@
       </div>
     </section>
 
-    <!-- ── Status bar ──────────────────────────────────────────────── -->
+    <!-- ── Status bar ───────��──────────────────────────────────────── -->
     <footer class="statusbar">
       <span class="status-item status-branch"><span class="status-branch-dot" aria-hidden="true"></span><span id="status-branch">main</span></span>
       <span class="status-item" id="status-runtime">Python 3.14 · WebAssembly</span>
@@ -240,13 +240,13 @@
       <div>
         <p class="settings-eyebrow">Personalize this session</p>
         <h2 class="dialog-title" id="username-title">What username should your terminal use?</h2>
-        <p class="settings-description" id="username-description">This only labels the simulated shell in this browser tab. It is not sent to a server. Choose an alias rather than your real name.</p>
+        <p class="settings-description" id="username-description">This only changes the terminal prompt label in this browser. It is not sent to the runner. Choose an alias rather than your real name.</p>
       </div>
       <label class="dialog-label" for="username-input">Terminal username</label>
       <input class="dialog-input" id="username-input" name="terminalUsername" type="text" maxlength="32" pattern="[A-Za-z_][A-Za-z0-9._-]{0,31}" placeholder="guest" required autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-describedby="username-hint">
       <p class="dialog-hint" id="username-hint">Start with a letter or underscore; use letters, numbers, dots, underscores, or hyphens.</p>
       <div class="dialog-actions">
-        <button class="btn ghost" id="username-guest" type="button">Continue as guest</button>
+        <button class="btn ghost" id="username-guest" type="button">Use guest alias</button>
         <button class="btn primary" type="submit">Continue</button>
       </div>
     </form>

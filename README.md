@@ -30,18 +30,20 @@ Render provides `RENDER_EXTERNAL_URL` automatically. Set `BETTER_AUTH_URL` only 
 
 ## Runner API contract
 
-The app calls both runner services from its authenticated server route; runner credentials are never sent to the browser. Each runner service must isolate sessions, enforce its own command/resource limits, and implement the same JSON API:
+The app calls both runner services from its authenticated server route; credentials are never sent to the browser. Each service must isolate sessions, enforce command, output, upload, resource, and single-concurrent-command limits, and expire idle sessions after 24 hours. The app requests session deletion at sign-out.
 
-- `POST /v1/sessions` with `{ runtime, sessionKey, workspaceRoot }` returns `{ id, cwd }`.
-- `PUT /v1/sessions/:id/files` with `{ files: [{ path, content }] }` replaces the session workspace snapshot.
-- `POST /v1/sessions/:id/commands` with `{ command, cwd, timeoutMs }` returns `{ stdout, stderr, exitCode, cwd }`.
-- `GET /v1/sessions/:id/files` returns the full synchronized workspace as `{ files: [{ path, content }] }`.
+- `POST /v1/sessions` with `{ runtime, sessionKey, workspaceRoot, idleTimeoutSeconds, maxConcurrentCommands }` returns `{ id, cwd }`.
+- `PUT /v1/sessions/:id/workspace` with `{ files: [{ path, content }] }` replaces the complete session workspace.
+- `POST /v1/sessions/:id/commands` with `{ command, cwd, timeoutMs }` returns `{ processId }`.
+- `GET /v1/sessions/:id/processes/:processId/events?cursor=0` returns `{ events, nextCursor, status, exitCode, cwd }`. Each event is `{ cursor, stream, data }`, where `stream` is `stdout` or `stderr` and `status` is `running`, `completed`, or `failed`.
+- `GET /v1/sessions/:id/workspace/changes` returns the full synchronized workspace as `{ files: [{ path, content }], cwd }`.
+- `DELETE /v1/sessions/:id` closes the remote session.
 
-The Linux service accepts `runtime: "bash"` and uses `/workspace` as its root. The Windows service accepts `runtime: "pwsh"` and uses `C:\workspace`. File paths are relative to the session workspace. The app uses one remote session per signed-in user and runtime, and scopes every Neon lookup by the authenticated user ID.
+The app streams output events to the terminal as they arrive. The Linux image should include `curl` and `wget`; the Windows VM should provide PowerShell and `winget` (with `curl`/`wget` if needed). The Linux service accepts `runtime: "bash"` and uses `/workspace` as its root. The Windows service accepts `runtime: "pwsh"` and uses `C:\workspace`. File paths are relative to the session workspace. Each signed-in user gets a separate session per runtime, and every Neon query is scoped by the authenticated user ID.
 
 ## Local development
 
-Install the dependencies with npm, then run the Next.js development server. The existing editor surface is served from `public/ide.html`; the protected app route redirects signed-out visitors to `/sign-in`.
+Install the dependencies with npm, then run the Next.js development server. The editor surface is served from `public/ide.html`; the home page and direct IDE document both require a signed-in session and redirect signed-out visitors to `/sign-in`.
 
 The project uses `DATABASE_URL` and `BETTER_AUTH_SECRET` for auth. Runner APIs are optional for viewing the editor, but their corresponding URL and token must be configured before Bash or PowerShell commands can run.
 

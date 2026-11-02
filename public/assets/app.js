@@ -9,8 +9,8 @@
  *   - supervising the Python and JavaScript workers
  */
 
-import { registerPythonIntelliSense } from "./completions.js?v=31";
-import { createShell } from "./shell.js?v=31";
+import { registerPythonIntelliSense } from "./completions.js?v=32";
+import { createShell } from "./shell.js?v=32";
 
 const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
 const workspaceScope = (new URLSearchParams(window.location.search).get("workspace") || "local")
@@ -1887,18 +1887,21 @@ function insertCompletion(result) {
   dom.promptInput.disabled = true;
 
   try {
+  const writeRunnerConfigurationHint = () => {
+  const prefix = shell.mode === "bash" ? "LINUX" : "WINDOWS";
+  writeTerminal(`Set ${prefix}_RUNNER_BASE_URL and ${prefix}_RUNNER_TOKEN in Render.`, "sys");
+  };
   const response = await fetch("/api/runner/execute", {
   method: "POST",
   credentials: "same-origin",
   cache: "no-store",
-  headers: { "Content-Type": "application/json", Accept: "application/json" },
+  headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
   body: JSON.stringify({
   runtime: shell.mode,
   command: line,
   files: [...state.files].map(([path, content]) => ({ path, content: String(content) })),
   }),
   });
-  const result = await response.json().catch(() => null);
 
   if (response.status === 401) {
   writeTerminal("Your session has expired. Sign in again.", "err");
@@ -1907,19 +1910,71 @@ function insertCompletion(result) {
   return;
   }
   if (!response.ok) {
+  const result = await response.json().catch(() => null);
   writeTerminal(result?.error || "Remote command failed.", "err");
-  if (result?.code === "runner_not_configured") {
-  const prefix = shell.mode === "bash" ? "LINUX" : "WINDOWS";
-  writeTerminal(`Set ${prefix}_RUNNER_BASE_URL and ${prefix}_RUNNER_TOKEN in Render.`, "sys");
+  if (result?.code === "runner_not_configured") writeRunnerConfigurationHint();
+  return;
   }
+  if (!response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
+  writeTerminal("The remote runner returned an invalid response.", "err");
   return;
   }
 
-  if (typeof result.stdout === "string" && result.stdout) writeTerminal(result.stdout);
-  if (typeof result.stderr === "string" && result.stderr) writeTerminal(result.stderr, "err");
-  if (Number.isInteger(result.exitCode)) shell.lastExit = result.exitCode;
-  setRemoteWorkingDirectory(result.cwd);
-  applyRemoteWorkspace(result.files);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completion = null;
+  let streamError = null;
+  const consumeFrame = (frame) => {
+  const data = frame
+  .split(/\r?\n/)
+  .filter((part) => part.startsWith("data:"))
+  .map((part) => part.slice(5).trimStart())
+  .join("\n");
+  if (!data) return;
+  let event;
+  try {
+  event = JSON.parse(data);
+  } catch {
+  return;
+  }
+  if (event.type === "output" && typeof event.data === "string") {
+  writeTerminal(event.data, event.stream === "stderr" ? "err" : "");
+  } else if (event.type === "complete") {
+  completion = event;
+  } else if (event.type === "error") {
+  streamError = event;
+  writeTerminal(event.error || "Remote command failed.", "err");
+  if (event.code === "runner_not_configured") writeRunnerConfigurationHint();
+  }
+  };
+
+  const consumeBufferedFrames = () => {
+  let boundary = buffer.indexOf("\n\n");
+  while (boundary !== -1) {
+  consumeFrame(buffer.slice(0, boundary));
+  buffer = buffer.slice(boundary + 2);
+  boundary = buffer.indexOf("\n\n");
+  }
+  };
+  while (true) {
+  const { value, done } = await reader.read();
+  if (value) buffer += decoder.decode(value, { stream: true });
+  if (done) buffer += decoder.decode();
+  consumeBufferedFrames();
+  if (done) break;
+  }
+  if (buffer.trim()) consumeFrame(buffer);
+  reader.releaseLock();
+
+  if (streamError) return;
+  if (!completion) {
+  writeTerminal("The remote runner closed the output stream before completion.", "err");
+  return;
+  }
+  if (Number.isInteger(completion.exitCode)) shell.lastExit = completion.exitCode;
+  setRemoteWorkingDirectory(completion.cwd);
+  applyRemoteWorkspace(completion.files);
   } finally {
   runnerBusy = false;
   dom.promptInput.disabled = false;
@@ -3514,15 +3569,16 @@ async function runShellFile(name) {
     toast("The shell is still starting…");
     return;
   }
-  const code = state.files.get(name) ?? "";
-  showConsole("terminal");
-  writeTerminal(` ${name}`, "cmd");
-  for (const line of String(code).split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    await shell.execute(line);
+  if (!state.files.has(name)) {
+    toast("The shell script is no longer in the workspace.", "error");
+    return;
   }
-  writeTerminal("Shell script finished.", "ok");
+  const escapedName = shell.mode === "pwsh"
+    ? `'${name.replace(/'/g, "''")}'`
+    : `'${name.replace(/'/g, "'\\''")}'`;
+  const command = shell.mode === "pwsh" ? `& ${escapedName}` : `bash -- ${escapedName}`;
+  showConsole("terminal");
+  await executeRemoteCommand(command);
 }
 
 function runHtmlFile(name) {
@@ -4669,8 +4725,8 @@ function boot() {
   showPanel(state.panel);
 
   writeTerminal(
-    `Python IDE — client-side runtime (Pyodide ${PYODIDE_VERSION})\n` +
-      "Python and JavaScript run locally. Type “help” for shell commands.\n",
+  `Python IDE — Pyodide ${PYODIDE_VERSION} + remote shell\n` +
+  "Python runs in this browser. Bash and PowerShell use your configured remote runner.\n",
     "sys"
   );
 
@@ -4698,6 +4754,10 @@ window.addEventListener("beforeunload", () => {
   signOutButton?.addEventListener("click", async () => {
   signOutButton.disabled = true;
   try {
+  await fetch("/api/runner/close", {
+  method: "POST",
+  credentials: "same-origin",
+  }).catch(() => {});
   const response = await fetch("/api/auth/sign-out", {
   method: "POST",
   credentials: "same-origin",
