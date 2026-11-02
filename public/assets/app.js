@@ -9,16 +9,46 @@
  *   - supervising the Python and JavaScript workers
  */
 
-import { registerPythonIntelliSense } from "./completions.js?v=29";
-import { createShell } from "./shell.js?v=29";
+import { registerPythonIntelliSense } from "./completions.js?v=32";
+import { createShell } from "./shell.js?v=32";
 
 const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
-const STORAGE_KEY = "pyide.workspace.v2";
-const SETTINGS_KEY = "pyide.settings.v1";
-const USERNAME_SESSION_KEY = "pyide.shell.username.session";
-const SHELL_HISTORY_KEY = "pyide.shell.history.v1";
-const SHELL_DIRS_KEY = "pyide.shell.dirs.v1";
+const workspaceScope = (new URLSearchParams(window.location.search).get("workspace") || "local")
+  .replace(/[^A-Za-z0-9_-]/g, "")
+  .slice(0, 80) || "local";
+const storagePrefix = `pyide.${workspaceScope}`;
+const STORAGE_KEY = `${storagePrefix}.workspace.v2`;
+const SETTINGS_KEY = `${storagePrefix}.settings.v1`;
+const USERNAME_SESSION_KEY = `${storagePrefix}.shell.username.session`;
+const SHELL_HISTORY_KEY = `${storagePrefix}.shell.history.v1`;
+const SHELL_DIRS_KEY = `${storagePrefix}.shell.dirs.v1`;
+
+function migrateLegacyStorage() {
+  if (workspaceScope === "local") return;
+  const keys = [
+  ["pyide.workspace.v2", STORAGE_KEY],
+  ["pyide.settings.v1", SETTINGS_KEY],
+  ["pyide.shell.history.v1", SHELL_HISTORY_KEY],
+  ["pyide.shell.dirs.v1", SHELL_DIRS_KEY],
+  ];
+  for (const [legacyKey, scopedKey] of keys) {
+  try {
+  if (localStorage.getItem(scopedKey) !== null) continue;
+  const legacyValue = localStorage.getItem(legacyKey);
+  if (legacyValue === null) continue;
+  localStorage.setItem(scopedKey, legacyValue);
+  localStorage.removeItem(legacyKey);
+  } catch {
+  /* storage is optional; continue with an isolated workspace */
+  }
+  }
+}
+
+migrateLegacyStorage();
 const PYODIDE_VERSION = "0.26.4";
+const PROGRAM_STDIN_BUFFER_BYTES = 65_536;
+const PROGRAM_STDIN_CONTROL_BYTES = Int32Array.BYTES_PER_ELEMENT * 2;
+const programInputEncoder = new TextEncoder();
 const DEFAULT_USERNAME = "guest";
 const USERNAME_PATTERN = /^[A-Za-z_][A-Za-z0-9._-]{0,31}$/;
 
@@ -168,9 +198,6 @@ const dom = {
   console: $("console"),
   resizer: $("resizer"),
   terminal: $("terminal"),
-  pythonInput: $("python-input"),
-  pythonOutput: $("python-output"),
-  pythonIoStatus: $("python-io-status"),
   promptForm: $("prompt-form"),
   promptInput: $("prompt-input"),
   promptPath: $("prompt-path"),
@@ -272,6 +299,9 @@ const state = {
   batchRunKind: "",
   batchCalc: { display: "0", accumulator: null, operator: null, waitingForOperand: false },
   running: false,
+  pythonRunStarting: false,
+  stdinChannel: null,
+  stdinPending: false,
   pendingRun: null,
   pendingPip: null,
   pipInstalling: false,
@@ -329,7 +359,7 @@ function restoreWorkspace() {
     state.openTabs = (saved.openTabs || []).filter((name) => state.files.has(name));
     if (!state.openTabs.length) state.openTabs = [...state.files.keys()].slice(0, 2);
     state.active = state.files.has(saved.active) ? saved.active : state.openTabs[0] || null;
-    state.panel = ["io", "terminal", "canvas", "window"].includes(saved.panel) ? saved.panel : "terminal";
+    state.panel = ["terminal", "canvas", "window"].includes(saved.panel) ? saved.panel : "terminal";
     if (Number.isFinite(saved.consoleHeight)) state.consoleHeight = saved.consoleHeight;
   } else {
     state.openTabs = [];
@@ -397,14 +427,6 @@ function askText({ title, label, value = "", hint = "", multiline = false, confi
     field.focus();
     if (!multiline) field.select();
   });
-}
-
-function readProgramInput() {
-  const normalized = String(dom.pythonInput.value ?? "").replace(/\r\n?/g, "\n");
-  if (normalized === "") return [];
-  const lines = normalized.split("\n");
-  if (lines[lines.length - 1] === "") lines.pop();
-  return lines;
 }
 
 /* ==========================================================================
@@ -1281,7 +1303,7 @@ async function initEditor() {
     state.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runActive());
     state.editor.addCommand(
       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
-      () => focusProgramInput()
+      () => focusTerminalInput()
     );
 
     setEditorLoading(false);
@@ -1460,8 +1482,28 @@ function terminalNearBottom() {
   return el.scrollHeight - el.scrollTop - el.clientHeight < 60;
 }
 
+let terminalStreamLine = null;
+
+function createTerminalStreamLine(kind = "") {
+  const element = document.createElement("div");
+  element.className = `term-line is-streaming${kind ? ` ${kind}` : ""}`;
+  const output = document.createElement("span");
+  output.className = "term-stream-output";
+  element.append(output);
+  dom.terminal.append(element);
+  terminalStreamLine = { element, output, raw: "" };
+  return terminalStreamLine;
+}
+
+function finishTerminalStreamLine() {
+  if (!terminalStreamLine) return;
+  terminalStreamLine.element.classList.remove("is-streaming");
+  terminalStreamLine = null;
+}
+
 function writeTerminal(text, kind = "") {
   if (text === undefined || text === null) return;
+  finishTerminalStreamLine();
   const stick = terminalNearBottom();
   const clean = String(text).replace(/\r\n/g, "\n").replace(/\r/g, "");
   const lines = clean.split("\n");
@@ -1481,52 +1523,46 @@ function writeTerminal(text, kind = "") {
   announce(clean);
 }
 
-function writePythonOutput(text, kind = "") {
+function writeTerminalStream(text, kind = "") {
   if (text === undefined || text === null) return;
-  const stick = dom.pythonOutput.scrollHeight - dom.pythonOutput.scrollTop - dom.pythonOutput.clientHeight < 60;
   const clean = String(text).replace(/\r\n/g, "\n").replace(/\r/g, "");
-  const lines = clean.split("\n");
-  if (lines[lines.length - 1] === "") lines.pop();
+  if (!clean) return;
 
-  const fragment = document.createDocumentFragment();
-  for (const line of lines) {
-    const row = document.createElement("div");
-    row.className = `python-output-line${kind === "err" ? " is-error" : kind === "meta" ? " is-meta" : ""}`;
-    if (line.includes("\x1b[")) row.append(ansiFragment(line));
-    else row.textContent = line;
-    fragment.append(row);
+  const stick = terminalNearBottom();
+  const chunks = clean.split("\n");
+  const endsWithNewline = chunks[chunks.length - 1] === "";
+  if (endsWithNewline) chunks.pop();
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const line = terminalStreamLine || createTerminalStreamLine(kind);
+    if (kind) line.element.classList.add(kind);
+    line.raw += chunks[index];
+    if (line.raw.includes("\x1b[")) line.output.replaceChildren(ansiFragment(line.raw));
+    else line.output.textContent = line.raw;
+    if (index < chunks.length - 1 || endsWithNewline) finishTerminalStreamLine();
   }
-  dom.pythonOutput.append(fragment);
-  if (stick) dom.pythonOutput.scrollTop = dom.pythonOutput.scrollHeight;
-}
 
-function setPythonIoStatus(message, stateName = "") {
-  dom.pythonIoStatus.textContent = message;
-  if (stateName) dom.pythonIoStatus.dataset.state = stateName;
-  else delete dom.pythonIoStatus.dataset.state;
-}
+  if (!chunks.length && endsWithNewline) {
+    if (!terminalStreamLine) createTerminalStreamLine(kind);
+    finishTerminalStreamLine();
+  }
 
-function clearPythonOutput(message = "") {
-  dom.pythonOutput.replaceChildren();
-  dom.pythonOutput.scrollTop = 0;
-  if (!message) return;
-  const placeholder = document.createElement("p");
-  placeholder.className = "python-output-placeholder";
-  placeholder.textContent = message;
-  dom.pythonOutput.append(placeholder);
+  if (stick) dom.terminal.scrollTop = dom.terminal.scrollHeight;
+  announce(clean);
 }
 
 function clearActiveOutput() {
-  if (state.panel === "io") {
-    clearPythonOutput("Output cleared.");
-    setPythonIoStatus("Output cleared.");
-  } else {
-    clearTerminal();
-  }
+  clearTerminal();
 }
 
 function clearTerminal() {
+  if (dom.promptForm.parentElement?.closest(".term-line")) {
+    dom.promptForm.classList.remove("is-inline");
+    dom.terminal.after(dom.promptForm);
+  }
   dom.terminal.replaceChildren();
+  terminalStreamLine = null;
+  if (state.stdinPending) attachProgramInputPrompt();
 }
 
 /* ==========================================================================
@@ -1548,13 +1584,77 @@ let historyIndex = shellHistory.length;
 
 function refreshPrompt() {
   if (!shell) return;
+
+  if (state.stdinPending) {
+    dom.promptPath.textContent = "";
+    dom.promptSigil.textContent = "›";
+    dom.promptInput.placeholder = "Type a response and press Enter";
+    dom.promptInput.title = "Send a line to the running Python program";
+    dom.promptInput.setAttribute("aria-label", "Program input");
+    dom.promptInput.disabled = false;
+    return;
+  }
+
   const parts = shell.promptParts();
   if (dom.promptPath) dom.promptPath.textContent = parts.path;
   if (dom.promptSigil) dom.promptSigil.textContent = parts.sigil;
-  dom.promptInput.placeholder = shell.mode === "pwsh"
-    ? "Type a PowerShell command — try “help”"
-    : "Type a bash command — try “help”";
-  dom.promptInput.title = shell.promptText();
+  const busy = state.pythonRunStarting || state.running || Boolean(state.pendingRun) || state.pipInstalling;
+  dom.promptInput.placeholder = busy
+    ? "Python is running…"
+    : shell.mode === "pwsh"
+      ? "Type a PowerShell command — try “help”"
+      : "Type a bash command — try “help”";
+  dom.promptInput.title = busy ? "The terminal prompt returns when the running task finishes" : shell.promptText();
+  dom.promptInput.setAttribute("aria-label", "Terminal command");
+  dom.promptInput.disabled = busy;
+}
+
+function createProgramStdinChannel() {
+  if (globalThis.crossOriginIsolated !== true || typeof SharedArrayBuffer === "undefined") return null;
+  try {
+    const buffer = new SharedArrayBuffer(PROGRAM_STDIN_BUFFER_BYTES);
+    return {
+      buffer,
+      control: new Int32Array(buffer, 0, 2),
+      data: new Uint8Array(buffer, PROGRAM_STDIN_CONTROL_BYTES),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function attachProgramInputPrompt() {
+  if (!terminalStreamLine) createTerminalStreamLine();
+  dom.promptForm.classList.add("is-inline");
+  terminalStreamLine.element.append(dom.promptForm);
+}
+
+function restoreTerminalPrompt() {
+  dom.promptForm.classList.remove("is-inline");
+  if (dom.promptForm.parentElement !== dom.terminal.parentElement) {
+    dom.terminal.after(dom.promptForm);
+  }
+}
+
+function submitProgramInput(value) {
+  const channel = state.stdinChannel;
+  if (!state.stdinPending || !channel) return false;
+
+  const bytes = programInputEncoder.encode(String(value));
+  if (bytes.length > channel.data.length) {
+    toast("Input is too long for the running program.", "error");
+    return false;
+  }
+
+  channel.data.set(bytes);
+  Atomics.store(channel.control, 1, bytes.length);
+  Atomics.store(channel.control, 0, 1);
+  Atomics.notify(channel.control, 0, 1);
+  state.stdinPending = false;
+  dom.promptInput.value = "";
+  restoreTerminalPrompt();
+  refreshPrompt();
+  return true;
 }
 
 function shellWriteFile(key, content) {
@@ -1615,7 +1715,7 @@ function shellHost() {
         writeTerminal("python: the Python runtime is still starting.\n", "err");
         return false;
       }
-      return runPythonFile(key, lines);
+      return runPythonFile(key, lines, { fromShell: true });
     },
     runJavaScript: async (key) => runJavaScript(key, { quiet: true }),
     runBatch: async (key) => runBatchFile(key),
@@ -1640,6 +1740,7 @@ function shellHost() {
 
       state.pipInstalling = true;
       updateRunButtons();
+      refreshPrompt();
 
       try {
         if (state.runtime !== "ready") {
@@ -1673,6 +1774,7 @@ function shellHost() {
         if (state.pipInstalling && !state.pendingPip) {
           state.pipInstalling = false;
           updateRunButtons();
+          refreshPrompt();
         }
       }
     },
@@ -1718,9 +1820,180 @@ function insertCompletion(result) {
   return true;
 }
 
-dom.promptForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
+  let runnerBusy = false;
+
+  function setRemoteWorkingDirectory(cwd) {
+  if (!shell || typeof cwd !== "string") return;
+  const normalized = cwd.replace(/\\/g, "/");
+  const runtime = shell.mode;
+  const match = runtime === "bash"
+  ? normalized.match(/^\/workspace(\/.*)?$/)
+  : normalized.match(/^[a-z]:\/workspace(\/.*)?$/i);
+  if (!match) return;
+  const relative = match[1] || "";
+  if (relative.split("/").some((part) => part === ".." || part === ".")) return;
+  const path = relative.replace(/^\/+/, "").replace(/\/{2,}/g, "/");
+  shell.cwd = path ? `/${path}` : "/";
+  shell.previousCwd = shell.cwd;
+  refreshPrompt();
+  }
+
+  function applyRemoteWorkspace(files) {
+  if (!Array.isArray(files)) return;
+  const synced = new Map();
+  for (const entry of files) {
+  if (!entry || typeof entry !== "object") continue;
+  const name = String(entry.path || "");
+  if (validFileName(name) || typeof entry.content !== "string") continue;
+  synced.set(name, entry.content);
+  }
+
+  for (const [name, model] of state.models) {
+  if (synced.has(name)) continue;
+  model.dispose();
+  state.models.delete(name);
+  state.views.delete(name);
+  state.snapshots.delete(name);
+  }
+
+  state.files.clear();
+  for (const [name, content] of synced) {
+  state.files.set(name, content);
+  state.snapshots.set(name, content);
+  const model = state.models.get(name);
+  if (model && !model.isDisposed() && model.getValue() !== content) model.setValue(content);
+  }
+
+  state.openTabs = state.openTabs.filter((name) => state.files.has(name));
+  if (!state.active || !state.files.has(state.active)) {
+  state.active = state.openTabs[0] || [...state.files.keys()][0] || null;
+  }
+  if (state.active && !state.openTabs.includes(state.active)) state.openTabs.unshift(state.active);
+
+  renderFileList();
+  renderTabs();
+  syncEditor();
+  refreshLanguage();
+  scheduleSave();
+  if (state.active && languageFor(state.active) === "html") scheduleHtmlPreview();
+  }
+
+  async function executeRemoteCommand(line) {
+  if (runnerBusy) return;
+  runnerBusy = true;
+  snapshotActive();
+  shell.addHistory(line);
+  writeTerminal(`${shell.promptText()} ${line}`, "cmd");
+  dom.promptInput.disabled = true;
+
+  try {
+  const writeRunnerConfigurationHint = () => {
+  const prefix = shell.mode === "bash" ? "LINUX" : "WINDOWS";
+  writeTerminal(`Set ${prefix}_RUNNER_BASE_URL and ${prefix}_RUNNER_TOKEN in Render.`, "sys");
+  };
+  const response = await fetch("/api/runner/execute", {
+  method: "POST",
+  credentials: "same-origin",
+  cache: "no-store",
+  headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+  body: JSON.stringify({
+  runtime: shell.mode,
+  command: line,
+  files: [...state.files].map(([path, content]) => ({ path, content: String(content) })),
+  }),
+  });
+
+  if (response.status === 401) {
+  writeTerminal("Your session has expired. Sign in again.", "err");
+  const destination = window.parent !== window ? window.parent : window;
+  destination.location.assign("/sign-in");
+  return;
+  }
+  if (!response.ok) {
+  const result = await response.json().catch(() => null);
+  writeTerminal(result?.error || "Remote command failed.", "err");
+  if (result?.code === "runner_not_configured") writeRunnerConfigurationHint();
+  return;
+  }
+  if (!response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
+  writeTerminal("The remote runner returned an invalid response.", "err");
+  return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completion = null;
+  let streamError = null;
+  const consumeFrame = (frame) => {
+  const data = frame
+  .split(/\r?\n/)
+  .filter((part) => part.startsWith("data:"))
+  .map((part) => part.slice(5).trimStart())
+  .join("\n");
+  if (!data) return;
+  let event;
+  try {
+  event = JSON.parse(data);
+  } catch {
+  return;
+  }
+  if (event.type === "output" && typeof event.data === "string") {
+  writeTerminal(event.data, event.stream === "stderr" ? "err" : "");
+  } else if (event.type === "complete") {
+  completion = event;
+  } else if (event.type === "error") {
+  streamError = event;
+  writeTerminal(event.error || "Remote command failed.", "err");
+  if (event.code === "runner_not_configured") writeRunnerConfigurationHint();
+  }
+  };
+
+  const consumeBufferedFrames = () => {
+  let boundary = buffer.indexOf("\n\n");
+  while (boundary !== -1) {
+  consumeFrame(buffer.slice(0, boundary));
+  buffer = buffer.slice(boundary + 2);
+  boundary = buffer.indexOf("\n\n");
+  }
+  };
+  while (true) {
+  const { value, done } = await reader.read();
+  if (value) buffer += decoder.decode(value, { stream: true });
+  if (done) buffer += decoder.decode();
+  consumeBufferedFrames();
+  if (done) break;
+  }
+  if (buffer.trim()) consumeFrame(buffer);
+  reader.releaseLock();
+
+  if (streamError) return;
+  if (!completion) {
+  writeTerminal("The remote runner closed the output stream before completion.", "err");
+  return;
+  }
+  if (Number.isInteger(completion.exitCode)) shell.lastExit = completion.exitCode;
+  setRemoteWorkingDirectory(completion.cwd);
+  applyRemoteWorkspace(completion.files);
+  } finally {
+  runnerBusy = false;
+  dom.promptInput.disabled = false;
+  refreshPrompt();
+  updateRunButtons();
+  scheduleSave();
+  }
+  }
+
+  async function submitTerminalLine() {
+  if (!shell) return;
+  if (!state.stdinPending && (state.pythonRunStarting || state.running || state.pendingRun || state.pipInstalling)) return;
+
   const line = dom.promptInput.value;
+  if (state.stdinPending) {
+    submitProgramInput(line);
+    return;
+  }
+
   dom.promptInput.value = "";
   if (!line.trim()) {
     refreshPrompt();
@@ -1728,7 +2001,11 @@ dom.promptForm.addEventListener("submit", async (event) => {
   }
 
   try {
-    await shell.execute(line);
+  if (/^(clear|cls)\s*$/i.test(line.trim())) {
+  await shell.execute(line);
+  } else {
+  await executeRemoteCommand(line);
+  }
   } catch (error) {
     writeTerminal(String(error?.message || error), "err");
   }
@@ -1737,10 +2014,32 @@ dom.promptForm.addEventListener("submit", async (event) => {
   refreshPrompt();
   updateRunButtons();
   scheduleSave();
-});
+}
 
 dom.promptInput.addEventListener("keydown", (event) => {
   if (!shell) return;
+
+  if (event.key === "Enter") {
+    if (event.isComposing || event.keyCode === 229) return;
+    event.preventDefault();
+    void submitTerminalLine();
+    return;
+  }
+
+  if (state.stdinPending) {
+    if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "c") {
+      const hasSelection = (dom.promptInput.selectionStart ?? 0) !== (dom.promptInput.selectionEnd ?? 0);
+      if (!hasSelection) {
+        event.preventDefault();
+        stopRuntime("Python program interrupted with Ctrl+C.");
+      }
+    } else if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "l") {
+      event.preventDefault();
+      clearTerminal();
+    }
+    return;
+  }
+
   const history = shell.history;
 
   if (event.key === "ArrowUp") {
@@ -1816,8 +2115,8 @@ dom.promptForm.addEventListener("click", (event) => {
  * ========================================================================== */
 
 function updateRunButtons() {
-  const running = state.runtime === "running" || state.jsRunning || state.batchRunning;
-  const canRun = !running && !state.pipInstalling && Boolean(state.active);
+  const running = state.runtime === "running" || state.pythonRunStarting || Boolean(state.pendingRun) || state.jsRunning || state.batchRunning || state.pipInstalling;
+  const canRun = !running && Boolean(state.active);
   dom.btnRun.disabled = !canRun;
   dom.btnRunMenu.disabled = !canRun;
   dom.btnStop.disabled = !running;
@@ -1842,12 +2141,26 @@ function resolveRuntimeReadyWaiters() {
   while (runtimeReadyResolvers.length) runtimeReadyResolvers.shift()();
 }
 
+function finishPendingPythonRun(ok) {
+  state.running = false;
+  state.pythonRunStarting = false;
+  state.stdinPending = false;
+  state.stdinChannel = null;
+  restoreTerminalPrompt();
+  const resolve = state.pendingRun;
+  state.pendingRun = null;
+  if (resolve) resolve(Boolean(ok));
+  refreshPrompt();
+  updateRunButtons();
+}
+
 function settlePendingPip(ok, requestId) {
   const pending = state.pendingPip;
   if (!pending || (requestId !== undefined && pending.requestId !== requestId)) return false;
   state.pendingPip = null;
   state.pipInstalling = false;
   updateRunButtons();
+  refreshPrompt();
   pending.resolve(Boolean(ok));
   return true;
 }
@@ -1855,17 +2168,16 @@ function settlePendingPip(ok, requestId) {
 function startWorker() {
   if (state.pendingPip) settlePendingPip(false, state.pendingPip.requestId);
   if (state.worker) state.worker.terminate();
-  state.worker = new Worker(new URL("assets/worker.js", document.baseURI));
+  state.worker = new Worker(new URL("assets/worker.js?v=30", document.baseURI));
 
   state.worker.addEventListener("message", onWorkerMessage);
   state.worker.addEventListener("error", (event) => {
     const runtimeError = `Runtime error: ${event.message || "unknown"}`;
-    const pipWasInstalling = state.pipInstalling;
     setRuntime("error", "Runtime crashed");
     dbg("worker error", event.message);
-    if (pipWasInstalling) writeTerminal(runtimeError, "err");
-    else writePythonOutput(runtimeError, "err");
-    setPythonIoStatus("Python runtime error.", "error");
+    state.worker = null;
+    writeTerminal(runtimeError, "err");
+    finishPendingPythonRun(false);
     if (state.pendingPip) settlePendingPip(false, state.pendingPip.requestId);
     resolveRuntimeReadyWaiters();
   });
@@ -1883,9 +2195,22 @@ function ensureRuntime() {
   return new Promise((resolve) => runtimeReadyResolvers.push(resolve));
 }
 
-function stopRuntime(reason = "Runtime restarted.") {
-  setRuntime("loading", "Restarting runtime…");
+function stopRuntime(reason = "Runtime stopped.", { restart = false } = {}) {
+  const worker = state.worker;
+  state.worker = null;
+  worker?.terminate();
+  finishPendingPythonRun(false);
+  if (state.pendingPip) settlePendingPip(false, state.pendingPip.requestId);
+  else {
+    state.pipInstalling = false;
+    updateRunButtons();
+    refreshPrompt();
+  }
+  resolveRuntimeReadyWaiters();
+  setRuntime("idle", "Python runtime stopped.");
   writeTerminal(`\n${reason}`, "sys");
+  refreshPrompt();
+  if (restart) startWorker();
 }
 
 let jsRunCounter = 0;
@@ -1980,28 +2305,25 @@ function onWorkerMessage({ data }) {
         state.pyVersion = data.pythonVersion || state.pyVersion;
         dom.statusRuntime.textContent = `Python ${state.pyVersion} · Pyodide ${PYODIDE_VERSION}`;
         setRuntime("ready", data.message || `Python ${state.pyVersion} ready`);
-        setPythonIoStatus("Python ready.", "success");
+        refreshPrompt();
         while (runtimeReadyResolvers.length) runtimeReadyResolvers.shift()();
       } else if (data.state === "error") {
         setRuntime("error", data.message || "Runtime error");
-        setPythonIoStatus(data.message || "Python runtime error.", "error");
+        finishPendingPythonRun(false);
         if (state.pendingPip) settlePendingPip(false, state.pendingPip.requestId);
         resolveRuntimeReadyWaiters();
       } else {
         setRuntime("loading", data.message || "Loading…");
-        setPythonIoStatus(data.message || "Starting Python…", "running");
       }
       break;
     }
 
     case "fatal": {
       const fatalMessage = data.text || "Fatal runtime error";
-      const pipWasInstalling = state.pipInstalling;
       dbg("worker fatal", data.text);
       setRuntime("error", "Runtime crashed");
-      if (pipWasInstalling) writeTerminal(fatalMessage, "err");
-      else writePythonOutput(fatalMessage, "err");
-      setPythonIoStatus("Python runtime error.", "error");
+      writeTerminal(fatalMessage, "err");
+      finishPendingPythonRun(false);
       if (state.pendingPip) settlePendingPip(false, state.pendingPip.requestId);
       resolveRuntimeReadyWaiters();
       break;
@@ -2009,20 +2331,37 @@ function onWorkerMessage({ data }) {
 
     case "stdout":
       if (state.pipInstalling) writeTerminal(data.text, "");
-      else writePythonOutput(data.text, "");
+      else writeTerminalStream(data.text, "");
       break;
 
     case "stderr":
       if (state.pipInstalling) writeTerminal(data.text, "err");
-      else writePythonOutput(data.text, "err");
+      else writeTerminalStream(data.text, "err");
       break;
 
     case "run-start":
       state.running = true;
-      setPythonIoStatus(`Running ${data.entry || "program"}…`, "running");
+      refreshPrompt();
       setRuntime("running", "Running…");
       dom.tkStage.replaceChildren();
       dom.tkEmpty.hidden = false;
+      break;
+
+    case "stdin-request":
+      if (!state.stdinChannel) break;
+      state.stdinPending = true;
+      dom.promptInput.value = "";
+      refreshPrompt();
+      if (state.panel !== "terminal") showConsole("terminal");
+      attachProgramInputPrompt();
+      dom.promptInput.focus({ preventScroll: true });
+      break;
+
+    case "stdin-unavailable":
+      state.stdinPending = false;
+      restoreTerminalPrompt();
+      refreshPrompt();
+      writeTerminal("Live program input requires a cross-origin-isolated page. Deploy with the configured COOP/COEP headers, or provide input through a shell pipe.\n", "err");
       break;
 
     case "canvas":
@@ -2034,7 +2373,7 @@ function onWorkerMessage({ data }) {
       break;
 
     case "notice":
-      writePythonOutput(`[${data.payload?.title || "dialog"}] ${data.payload?.message || ""}`, "meta");
+      writeTerminal(`[${data.payload?.title || "dialog"}] ${data.payload?.message || ""}`, "meta");
       break;
 
     case "timer":
@@ -2049,11 +2388,7 @@ function onWorkerMessage({ data }) {
       break;
 
     case "done":
-      state.running = false;
-      if (state.pendingRun) {
-        state.pendingRun(data.ok);
-        state.pendingRun = null;
-      }
+      finishPendingPythonRun(Boolean(data.ok));
       setRuntime("ready", `Python ${state.pyVersion} ready`);
       finishRun(data);
       break;
@@ -2778,7 +3113,7 @@ function batchWorkspaceSnapshot() {
 function startBatchWorker() {
   if (state.batchWorker) return state.batchWorker;
   try {
-    const worker = new Worker(new URL("./batch-worker.js?v=29", import.meta.url));
+    const worker = new Worker(new URL(  "./batch-worker.js?v=30", import.meta.url));
     state.batchWorker = worker;
     state.batchInitialized = false;
     worker.addEventListener("message", handleBatchWorkerMessage);
@@ -3144,69 +3479,89 @@ function runActive() {
   }
 }
 
-function focusProgramInput() {
-  if (!state.active) {
-    toast("Open a file first.", "error");
-    return;
-  }
-  if (languageFor(state.active) !== "python") {
-    toast("Program input is only available for Python files.");
-    return;
-  }
-  showConsole("io");
-  dom.pythonInput.focus({ preventScroll: true });
+function focusTerminalInput() {
+  showConsole("terminal");
+  dom.promptInput.focus({ preventScroll: true });
 }
 
-async function runPythonFile(name, stdin) {
+function normalizeProgramStdin(stdin) {
+  if (Array.isArray(stdin)) return stdin.map(String);
+  if (stdin === undefined || stdin === null || stdin === "") return [];
+  const lines = String(stdin).replace(/\r\n?/g, "\n").split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+
+async function runPythonFile(name, stdin, options = {}) {
   if (!state.files.has(name)) return false;
   snapshotActive();
-  return runFile(name, stdin === undefined ? readProgramInput() : stdin);
+  return runFile(name, normalizeProgramStdin(stdin), options);
 }
 
-async function runFile(name, stdin) {
+async function runFile(name, stdin, options = {}) {
   if (!state.files.has(name)) return false;
   if (state.pipInstalling) {
     toast("Wait for pip installation to finish.");
     return false;
   }
-  if (state.running || state.pendingRun) {
+  if (state.running || state.pendingRun || state.pythonRunStarting) {
     toast("A Python program is already running.");
-    return false;
-  }
-  snapshotActive();
-  showConsole("io");
-  clearPythonOutput();
-  setPythonIoStatus(`Starting ${name}…`, "running");
-
-  await ensureRuntime();
-  if (state.pipInstalling) {
-    toast("Wait for pip installation to finish.");
-    return false;
-  }
-  if (state.running || state.pendingRun) {
-    toast("A Python program is already running.");
-    return false;
-  }
-  if (state.runtime !== "ready") {
-    setPythonIoStatus("Python runtime is unavailable.", "error");
     return false;
   }
 
   snapshotActive();
-  const code = state.files.get(name) ?? "";
-  state.snapshots.set(name, state.files.get(name) ?? "");
-  renderTabs();
+  showConsole("terminal");
+  if (!options.fromShell) writeTerminal(`${shell?.promptText() || "guest@pyide:~$"} python ${name}`, "cmd");
+  state.stdinPending = false;
+  state.stdinChannel = null;
+  state.pythonRunStarting = true;
+  refreshPrompt();
+  updateRunButtons();
 
-  return new Promise((resolve) => {
-    state.pendingRun = resolve;
-    state.worker?.postMessage({
-      type: "run",
-      entry: name,
-      code,
-      stdin,
-      files: Object.fromEntries(state.files),
+  try {
+    await ensureRuntime();
+    if (state.pipInstalling) {
+      writeTerminal("Python: wait for pip installation to finish.\n", "err");
+      return false;
+    }
+    if (state.running || state.pendingRun) {
+      writeTerminal("Python: another program is already running.\n", "err");
+      return false;
+    }
+    if (state.runtime !== "ready" || !state.worker) {
+      writeTerminal("Python runtime is unavailable.\n", "err");
+      return false;
+    }
+
+    snapshotActive();
+    const code = state.files.get(name) ?? "";
+    state.snapshots.set(name, code);
+    renderTabs();
+    state.stdinChannel = createProgramStdinChannel();
+
+    return await new Promise((resolve) => {
+      state.pendingRun = resolve;
+      refreshPrompt();
+      updateRunButtons();
+      state.worker.postMessage({
+        type: "run",
+        entry: name,
+        code,
+        stdin,
+        stdinBuffer: state.stdinChannel?.buffer ?? null,
+        files: Object.fromEntries(state.files),
+      });
     });
-  });
+  } finally {
+    state.pythonRunStarting = false;
+    if (!state.pendingRun) {
+      state.stdinChannel = null;
+      state.stdinPending = false;
+      restoreTerminalPrompt();
+    }
+    refreshPrompt();
+    updateRunButtons();
+  }
 }
 
 async function runShellFile(name) {
@@ -3214,15 +3569,16 @@ async function runShellFile(name) {
     toast("The shell is still starting…");
     return;
   }
-  const code = state.files.get(name) ?? "";
-  showConsole("terminal");
-  writeTerminal(` ${name}`, "cmd");
-  for (const line of String(code).split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    await shell.execute(line);
+  if (!state.files.has(name)) {
+    toast("The shell script is no longer in the workspace.", "error");
+    return;
   }
-  writeTerminal("Shell script finished.", "ok");
+  const escapedName = shell.mode === "pwsh"
+    ? `'${name.replace(/'/g, "''")}'`
+    : `'${name.replace(/'/g, "'\\''")}'`;
+  const command = shell.mode === "pwsh" ? `& ${escapedName}` : `bash -- ${escapedName}`;
+  showConsole("terminal");
+  await executeRemoteCommand(command);
 }
 
 function runHtmlFile(name) {
@@ -3240,9 +3596,9 @@ function runHtmlFile(name) {
 
 function finishRun(data) {
   const seconds = ((data.ms || 0) / 1000).toFixed(2);
-  setPythonIoStatus(
-    data.ok ? `Finished in ${seconds}s` : `Exited with errors after ${seconds}s`,
-    data.ok ? "success" : "error"
+  writeTerminal(
+    data.ok ? `Process finished in ${seconds}s\n` : `Process exited with errors after ${seconds}s\n`,
+    data.ok ? "ok" : "err"
   );
 
   mergeRunFiles(data.files || {});
@@ -3314,10 +3670,10 @@ function showPanel(name) {
   if (badge) badge.hidden = true;
 
   const clearButton = $("btn-clear");
-  const clearLabel = name === "io" ? "Clear program output" : "Clear terminal";
+  const clearLabel = "Clear terminal";
   clearButton.title = clearLabel;
   clearButton.setAttribute("aria-label", clearLabel);
-  clearButton.hidden = name !== "io" && name !== "terminal";
+  clearButton.hidden = name !== "terminal";
 
   if (name === "canvas") requestAnimationFrame(fitCanvas);
   scheduleSave();
@@ -3325,7 +3681,7 @@ function showPanel(name) {
 
 function showConsole(panel = state.panel) {
   dom.app.classList.remove("console-hidden");
-  if (!["io", "terminal", "canvas", "window"].includes(panel)) panel = "terminal";
+  if (!["terminal", "canvas", "window"].includes(panel)) panel = "terminal";
   showPanel(panel);
   if (panel === "terminal") dom.promptInput.focus({ preventScroll: true });
 }
@@ -3641,7 +3997,7 @@ dom.btnStop.addEventListener("click", () => {
     stopRuntime("Runtime stopped.");
   }
 });
-dom.btnRestart.addEventListener("click", () => stopRuntime("Runtime restarted."));
+dom.btnRestart.addEventListener("click", () => stopRuntime("Runtime restarted.", { restart: true }));
 
 dom.btnRunMenu.addEventListener("click", (event) => {
   event.stopPropagation();
@@ -3652,7 +4008,7 @@ dom.runMenu.addEventListener("click", (event) => {
   const action = event.target.closest("[data-run]")?.dataset.run;
   if (!action) return;
   closeMenus();
-  if (action === "input") focusProgramInput();
+  if (action === "terminal") focusTerminalInput();
   else runActive();
 });
 
@@ -3748,7 +4104,7 @@ document.addEventListener("keydown", (event) => {
     runActive();
   } else if (event.key === "Enter" && event.shiftKey && !event.target.closest(".monaco-editor")) {
     event.preventDefault();
-    focusProgramInput();
+    focusTerminalInput();
   }
 });
 
@@ -3771,7 +4127,7 @@ function quickOpen() {
 
 const PALETTE_COMMANDS = [
   { icon: "▶", label: "Run active file", run: () => runActive() },
-  { icon: "⌨", label: "Focus program input", run: () => focusProgramInput() },
+  { icon: "⌨", label: "Focus terminal input", run: () => focusTerminalInput() },
   { icon: "+", label: "New file", run: () => dom.btnNew.click() },
   { icon: "⚙", label: "Open settings", run: () => dom.btnSettings.click() },
   { icon: "◐", label: "Toggle theme", run: () => { settings.theme = settings.theme === "dark" ? "light" : "dark"; saveSettings(); applySettings(); } },
@@ -4369,8 +4725,8 @@ function boot() {
   showPanel(state.panel);
 
   writeTerminal(
-    `Python IDE — client-side runtime (Pyodide ${PYODIDE_VERSION})\n` +
-      "Python and JavaScript run locally. Type “help” for shell commands.\n",
+  `Python IDE — Pyodide ${PYODIDE_VERSION} + remote shell\n` +
+  "Python runs in this browser. Bash and PowerShell use your configured remote runner.\n",
     "sys"
   );
 
@@ -4394,10 +4750,33 @@ window.addEventListener("beforeunload", () => {
   saveWorkspace();
 });
 
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  const signOutButton = $("btn-sign-out");
+  signOutButton?.addEventListener("click", async () => {
+  signOutButton.disabled = true;
+  try {
+  await fetch("/api/runner/close", {
+  method: "POST",
+  credentials: "same-origin",
+  }).catch(() => {});
+  const response = await fetch("/api/auth/sign-out", {
+  method: "POST",
+  credentials: "same-origin",
+  headers: { "Content-Type": "application/json" },
+  body: "{}",
   });
-}
+  if (!response.ok) throw new Error("Sign out failed");
+  const destination = window.parent !== window ? window.parent : window;
+  destination.location.assign("/sign-in");
+  } catch {
+  toast("Could not sign out. Please try again.", "error");
+  signOutButton.disabled = false;
+  }
+  });
 
-boot();
+  if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+  }
+  
+  boot();
