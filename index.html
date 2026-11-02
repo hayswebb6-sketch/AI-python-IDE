@@ -16,11 +16,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=27">
+  <link rel="stylesheet" href="assets/styles.css?v=28">
 
   <!-- Monaco's AMD loader (classic script: must run before app.js) -->
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
-  <script type="module" src="assets/app.js?v=27"></script>
+  <script type="module" src="assets/app.js?v=28"></script>
 </head>
 <body>
 
@@ -93,7 +93,7 @@
         </div>
         <div class="menu" id="run-menu" role="menu" hidden>
           <button role="menuitem" data-run="active"><span>Run active file</span><kbd>Ctrl ↵</kbd></button>
-          <button role="menuitem" data-run="input"><span>Provide stdin manually…</span><kbd>Ctrl ⇧ ↵</kbd></button>
+          <button role="menuitem" data-run="input"><span>Focus program input</span><kbd>Ctrl ⇧ ↵</kbd></button>
         </div>
       </div>
 
@@ -156,17 +156,20 @@
     <!-- ── Bottom panel ────────────────────────────────────────────── -->
     <div class="resizer" id="resizer" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="Resize output panel"></div>
 
-    <section class="console" id="console" aria-label="Output">
+    <section class="console" id="console" aria-label="Python input and output, terminal, and previews">
       <div class="console-head">
         <div class="console-tabs" role="tablist" aria-label="Output views">
-          <button class="console-tab is-active" data-panel="terminal" role="tab" aria-selected="true">
+          <button class="console-tab" data-panel="io" id="tab-io" role="tab" aria-controls="panel-io" aria-selected="false">
+            <svg class="icon"><use href="#i-terminal"/></svg> I/O
+          </button>
+          <button class="console-tab is-active" data-panel="terminal" id="tab-terminal" role="tab" aria-controls="panel-terminal" aria-selected="true">
             <svg class="icon"><use href="#i-terminal"/></svg> Terminal
           </button>
-          <button class="console-tab" data-panel="canvas" role="tab" aria-selected="false">
+          <button class="console-tab" data-panel="canvas" id="tab-canvas" role="tab" aria-controls="panel-canvas" aria-selected="false">
             <svg class="icon"><use href="#i-canvas"/></svg> Canvas
             <span class="badge" id="badge-canvas" hidden></span>
           </button>
-          <button class="console-tab" data-panel="window" role="tab" aria-selected="false">
+          <button class="console-tab" data-panel="window" id="tab-window" role="tab" aria-controls="panel-window" aria-selected="false">
             <svg class="icon"><use href="#i-window"/></svg> Window
             <span class="badge" id="badge-window" hidden></span>
           </button>
@@ -182,7 +185,29 @@
       </div>
 
       <div class="console-body">
-        <div class="panel panel-terminal is-active" id="panel-terminal" role="tabpanel">
+        <div class="panel panel-io" id="panel-io" role="tabpanel" aria-labelledby="tab-io" hidden>
+          <div class="python-io-layout">
+            <section class="python-io-section" aria-labelledby="python-input-title">
+              <div class="python-io-heading">
+                <label id="python-input-title" for="python-input">INPUT <span>STDIN</span></label>
+              </div>
+              <textarea class="python-io-input" id="python-input" spellcheck="false" autocapitalize="off"
+                        autocorrect="off" autocomplete="off" placeholder="Enter one value per line"
+                        aria-describedby="python-input-hint"></textarea>
+              <p class="python-io-hint" id="python-input-hint">Each line is sent to the next <code>input()</code> call.</p>
+            </section>
+            <section class="python-io-section" aria-labelledby="python-output-title">
+              <div class="python-io-heading">
+                <h3 id="python-output-title">OUTPUT</h3>
+                <span class="python-io-status" id="python-io-status" role="status" aria-live="polite">Ready</span>
+              </div>
+              <div class="python-output" id="python-output" role="log" aria-labelledby="python-output-title" aria-live="polite" aria-relevant="additions text">
+                <p class="python-output-placeholder">Press Run to see the program output.</p>
+              </div>
+            </section>
+          </div>
+        </div>
+        <div class="panel panel-terminal is-active" id="panel-terminal" role="tabpanel" aria-labelledby="tab-terminal">
           <div class="terminal" id="terminal" tabindex="0" aria-live="polite" aria-label="Terminal output"></div>
           <form class="prompt" id="prompt-form" autocomplete="off">
             <span class="prompt-path" id="prompt-path">~</span>
@@ -192,14 +217,14 @@
           </form>
         </div>
 
-        <div class="panel panel-canvas" id="panel-canvas" role="tabpanel" hidden>
+        <div class="panel panel-canvas" id="panel-canvas" role="tabpanel" aria-labelledby="tab-canvas" hidden>
           <div class="canvas-stage">
             <canvas id="canvas" width="720" height="480" aria-label="Graphics output"></canvas>
           </div>
           <div class="panel-hint">Drawing output from <code>turtle</code> and <code>pygame</code></div>
         </div>
 
-        <div class="panel panel-window" id="panel-window" role="tabpanel" hidden>
+        <div class="panel panel-window" id="panel-window" role="tabpanel" aria-labelledby="tab-window" hidden>
           <div class="tk-stage" id="tk-stage"></div>
            <iframe id="html-preview" class="html-preview" sandbox="allow-scripts allow-modals" hidden></iframe>
           <div class="tk-empty" id="tk-empty">Run a <code>tkinter</code> script to see its window here.</div>

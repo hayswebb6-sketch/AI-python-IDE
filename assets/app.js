@@ -9,8 +9,8 @@
  *   - supervising the Python and JavaScript workers
  */
 
-import { registerPythonIntelliSense } from "./completions.js?v=27";
-import { createShell } from "./shell.js?v=27";
+import { registerPythonIntelliSense } from "./completions.js?v=28";
+import { createShell } from "./shell.js?v=28";
 
 const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
 const STORAGE_KEY = "pyide.workspace.v2";
@@ -168,6 +168,9 @@ const dom = {
   console: $("console"),
   resizer: $("resizer"),
   terminal: $("terminal"),
+  pythonInput: $("python-input"),
+  pythonOutput: $("python-output"),
+  pythonIoStatus: $("python-io-status"),
   promptForm: $("prompt-form"),
   promptInput: $("prompt-input"),
   promptPath: $("prompt-path"),
@@ -323,7 +326,7 @@ function restoreWorkspace() {
     state.openTabs = (saved.openTabs || []).filter((name) => state.files.has(name));
     if (!state.openTabs.length) state.openTabs = [...state.files.keys()].slice(0, 2);
     state.active = state.files.has(saved.active) ? saved.active : state.openTabs[0] || null;
-    state.panel = ["terminal", "canvas", "window"].includes(saved.panel) ? saved.panel : "terminal";
+    state.panel = ["io", "terminal", "canvas", "window"].includes(saved.panel) ? saved.panel : "terminal";
     if (Number.isFinite(saved.consoleHeight)) state.consoleHeight = saved.consoleHeight;
   } else {
     state.openTabs = [];
@@ -393,74 +396,8 @@ function askText({ title, label, value = "", hint = "", multiline = false, confi
   });
 }
 
-function pythonUsesInput(source) {
-  const code = String(source ?? "").split("");
-  let quote = "";
-  let triple = false;
-  let escaped = false;
-  let comment = false;
-
-  for (let index = 0; index < code.length; index += 1) {
-    const char = code[index];
-    if (comment) {
-      if (char === "\n") comment = false;
-      else code[index] = " ";
-      continue;
-    }
-    if (quote) {
-      if (escaped) {
-        escaped = false;
-        code[index] = char === "\n" ? "\n" : " ";
-        continue;
-      }
-      if (char === "\\") {
-        escaped = true;
-        code[index] = " ";
-        continue;
-      }
-      if (triple && char === quote && code[index + 1] === quote && code[index + 2] === quote) {
-        code[index] = code[index + 1] = code[index + 2] = " ";
-        index += 2;
-        quote = "";
-        triple = false;
-        continue;
-      }
-      code[index] = char === "\n" ? "\n" : " ";
-      if (!triple && char === quote) quote = "";
-      continue;
-    }
-    if (char === "#") {
-      comment = true;
-      code[index] = " ";
-      continue;
-    }
-    if (char === "'" || char === '"') {
-      quote = char;
-      triple = code[index + 1] === char && code[index + 2] === char;
-      code[index] = " ";
-      if (triple) {
-        code[index + 1] = code[index + 2] = " ";
-        index += 2;
-      }
-    }
-  }
-
-  const executable = code.join("");
-  return /\binput\s*\(/.test(executable)
-    || /\bsys\s*\.\s*stdin\b/.test(executable)
-    || /\bstdin\s*\.\s*(?:read|readline|readlines)\s*\(/.test(executable);
-}
-
-async function askLines(title) {
-  const value = await askText({
-    title,
-    label: "Program input",
-    multiline: true,
-    hint: "Enter one value per line. Each line is supplied to the next input() call; prompts and output appear in the terminal.",
-    confirm: "Run",
-  });
-  if (value === null) return null;
-  const normalized = value.replace(/\r\n?/g, "\n");
+function readProgramInput() {
+  const normalized = String(dom.pythonInput.value ?? "").replace(/\r\n?/g, "\n");
   if (normalized === "") return [];
   const lines = normalized.split("\n");
   if (lines[lines.length - 1] === "") lines.pop();
@@ -1341,7 +1278,7 @@ async function initEditor() {
     state.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runActive());
     state.editor.addCommand(
       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
-      () => runWithInput()
+      () => focusProgramInput()
     );
 
     setEditorLoading(false);
@@ -1541,6 +1478,50 @@ function writeTerminal(text, kind = "") {
   announce(clean);
 }
 
+function writePythonOutput(text, kind = "") {
+  if (text === undefined || text === null) return;
+  const stick = dom.pythonOutput.scrollHeight - dom.pythonOutput.scrollTop - dom.pythonOutput.clientHeight < 60;
+  const clean = String(text).replace(/\r\n/g, "\n").replace(/\r/g, "");
+  const lines = clean.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+
+  const fragment = document.createDocumentFragment();
+  for (const line of lines) {
+    const row = document.createElement("div");
+    row.className = `python-output-line${kind === "err" ? " is-error" : kind === "meta" ? " is-meta" : ""}`;
+    if (line.includes("\x1b[")) row.append(ansiFragment(line));
+    else row.textContent = line;
+    fragment.append(row);
+  }
+  dom.pythonOutput.append(fragment);
+  if (stick) dom.pythonOutput.scrollTop = dom.pythonOutput.scrollHeight;
+}
+
+function setPythonIoStatus(message, stateName = "") {
+  dom.pythonIoStatus.textContent = message;
+  if (stateName) dom.pythonIoStatus.dataset.state = stateName;
+  else delete dom.pythonIoStatus.dataset.state;
+}
+
+function clearPythonOutput(message = "") {
+  dom.pythonOutput.replaceChildren();
+  dom.pythonOutput.scrollTop = 0;
+  if (!message) return;
+  const placeholder = document.createElement("p");
+  placeholder.className = "python-output-placeholder";
+  placeholder.textContent = message;
+  dom.pythonOutput.append(placeholder);
+}
+
+function clearActiveOutput() {
+  if (state.panel === "io") {
+    clearPythonOutput("Output cleared.");
+    setPythonIoStatus("Output cleared.");
+  } else {
+    clearTerminal();
+  }
+}
+
 function clearTerminal() {
   dom.terminal.replaceChildren();
 }
@@ -1627,7 +1608,7 @@ function shellHost() {
         writeTerminal("python: the Python runtime is still starting", "err");
         return false;
       }
-      return runPythonFile(key, lines, { quiet: true });
+      return runPythonFile(key, lines);
     },
     runJavaScript: async (key) => runJavaScript(key, { quiet: true }),
     runBatch: async (key) => runBatchFile(key),
@@ -1810,7 +1791,8 @@ function startWorker() {
   state.worker.addEventListener("error", (event) => {
     setRuntime("error", "Runtime crashed");
     dbg("worker error", event.message);
-    writeTerminal(`Runtime error: ${event.message || "unknown"}`, "err");
+    writePythonOutput(`Runtime error: ${event.message || "unknown"}`, "err");
+    setPythonIoStatus("Python runtime error.", "error");
   });
 
   setRuntime("loading", "Starting runtime…");
@@ -1925,30 +1907,35 @@ function onWorkerMessage({ data }) {
         state.pyVersion = data.pythonVersion || state.pyVersion;
         dom.statusRuntime.textContent = `Python ${state.pyVersion} · Pyodide ${PYODIDE_VERSION}`;
         setRuntime("ready", data.message || `Python ${state.pyVersion} ready`);
+        setPythonIoStatus("Python ready.", "success");
         while (runtimeReadyResolvers.length) runtimeReadyResolvers.shift()();
       } else if (data.state === "error") {
         setRuntime("error", data.message || "Runtime error");
+        setPythonIoStatus(data.message || "Python runtime error.", "error");
       } else {
         setRuntime("loading", data.message || "Loading…");
+        setPythonIoStatus(data.message || "Starting Python…", "running");
       }
       break;
     }
 
     case "fatal":
       dbg("worker fatal", data.text);
-      writeTerminal(data.text || "Fatal runtime error", "err");
+      writePythonOutput(data.text || "Fatal runtime error", "err");
+      setPythonIoStatus("Python runtime error.", "error");
       break;
 
     case "stdout":
-      writeTerminal(data.text, "");
+      writePythonOutput(data.text, "");
       break;
 
     case "stderr":
-      writeTerminal(data.text, "err");
+      writePythonOutput(data.text, "err");
       break;
 
     case "run-start":
       state.running = true;
+      setPythonIoStatus(`Running ${data.entry || "program"}…`, "running");
       setRuntime("running", "Running…");
       dom.tkStage.replaceChildren();
       dom.tkEmpty.hidden = false;
@@ -1963,7 +1950,7 @@ function onWorkerMessage({ data }) {
       break;
 
     case "notice":
-      writeTerminal(`[${data.payload?.title || "dialog"}] ${data.payload?.message || ""}`, "meta");
+      writePythonOutput(`[${data.payload?.title || "dialog"}] ${data.payload?.message || ""}`, "meta");
       break;
 
     case "timer":
@@ -2703,7 +2690,7 @@ function batchWorkspaceSnapshot() {
 function startBatchWorker() {
   if (state.batchWorker) return state.batchWorker;
   try {
-    const worker = new Worker(new URL("./batch-worker.js?v=27", import.meta.url));
+    const worker = new Worker(new URL("./batch-worker.js?v=28", import.meta.url));
     state.batchWorker = worker;
     state.batchInitialized = false;
     worker.addEventListener("message", handleBatchWorkerMessage);
@@ -3069,48 +3056,40 @@ function runActive() {
   }
 }
 
-async function runWithInput() {
+function focusProgramInput() {
   if (!state.active) {
     toast("Open a file first.", "error");
     return;
   }
   if (languageFor(state.active) !== "python") {
-    toast("Standard input is only available for Python files.");
+    toast("Program input is only available for Python files.");
     return;
   }
-  if (state.runtime !== "ready") {
-    toast("The Python runtime is still starting…");
-    return;
-  }
-  const lines = await askLines(`Standard input · ${state.active}`);
-  if (lines === null) return;
-  runFile(state.active, lines);
+  showConsole("io");
+  dom.pythonInput.focus({ preventScroll: true });
 }
 
-async function runPythonFile(name, stdin, options = {}) {
+async function runPythonFile(name, stdin) {
   if (!state.files.has(name)) return false;
   snapshotActive();
-  const code = state.files.get(name) ?? "";
-  let lines = stdin;
-  if (lines === undefined || (Array.isArray(lines) && lines.length === 0 && pythonUsesInput(code))) {
-    lines = await askLines(`Input for ${name}`);
-    if (lines === null) return false;
-  }
-  return runFile(name, lines ?? [], options);
+  return runFile(name, stdin === undefined ? readProgramInput() : stdin);
 }
 
-async function runFile(name, stdin, options = {}) {
-  const quiet = Boolean(options.quiet);
+async function runFile(name, stdin) {
   if (!state.files.has(name)) return false;
+  snapshotActive();
+  showConsole("io");
+  clearPythonOutput();
+  setPythonIoStatus(`Starting ${name}…`, "running");
+
   await ensureRuntime();
-  if (state.runtime !== "ready") return false;
+  if (state.runtime !== "ready") {
+    setPythonIoStatus("Python runtime is unavailable.", "error");
+    return false;
+  }
 
   snapshotActive();
-  showConsole("terminal");
-
   const code = state.files.get(name) ?? "";
-  if (!quiet) writeTerminal(` python ${name}`, "cmd");
-
   state.snapshots.set(name, state.files.get(name) ?? "");
   renderTabs();
 
@@ -3157,9 +3136,9 @@ function runHtmlFile(name) {
 
 function finishRun(data) {
   const seconds = ((data.ms || 0) / 1000).toFixed(2);
-  writeTerminal(
-    data.ok ? `Process finished in ${seconds}s` : `Process exited with errors after ${seconds}s`,
-    data.ok ? "ok" : "err"
+  setPythonIoStatus(
+    data.ok ? `Finished in ${seconds}s` : `Exited with errors after ${seconds}s`,
+    data.ok ? "success" : "error"
   );
 
   mergeRunFiles(data.files || {});
@@ -3230,13 +3209,19 @@ function showPanel(name) {
   const badge = $(`badge-${name}`);
   if (badge) badge.hidden = true;
 
+  const clearButton = $("btn-clear");
+  const clearLabel = name === "io" ? "Clear program output" : "Clear terminal";
+  clearButton.title = clearLabel;
+  clearButton.setAttribute("aria-label", clearLabel);
+  clearButton.hidden = name !== "io" && name !== "terminal";
+
   if (name === "canvas") requestAnimationFrame(fitCanvas);
   scheduleSave();
 }
 
 function showConsole(panel = state.panel) {
   dom.app.classList.remove("console-hidden");
-  if (!["terminal", "canvas", "window"].includes(panel)) panel = "terminal";
+  if (!["io", "terminal", "canvas", "window"].includes(panel)) panel = "terminal";
   showPanel(panel);
   if (panel === "terminal") dom.promptInput.focus({ preventScroll: true });
 }
@@ -3563,11 +3548,11 @@ dom.runMenu.addEventListener("click", (event) => {
   const action = event.target.closest("[data-run]")?.dataset.run;
   if (!action) return;
   closeMenus();
-  if (action === "input") runWithInput();
+  if (action === "input") focusProgramInput();
   else runActive();
 });
 
-$("btn-clear").addEventListener("click", clearTerminal);
+$("btn-clear").addEventListener("click", clearActiveOutput);
 
 /* ==========================================================================
  * Keyboard shortcuts
@@ -3659,7 +3644,7 @@ document.addEventListener("keydown", (event) => {
     runActive();
   } else if (event.key === "Enter" && event.shiftKey && !event.target.closest(".monaco-editor")) {
     event.preventDefault();
-    runWithInput();
+    focusProgramInput();
   }
 });
 
@@ -3682,7 +3667,7 @@ function quickOpen() {
 
 const PALETTE_COMMANDS = [
   { icon: "▶", label: "Run active file", run: () => runActive() },
-  { icon: "⌨", label: "Provide stdin manually…", run: () => runWithInput() },
+  { icon: "⌨", label: "Focus program input", run: () => focusProgramInput() },
   { icon: "+", label: "New file", run: () => dom.btnNew.click() },
   { icon: "⚙", label: "Open settings", run: () => dom.btnSettings.click() },
   { icon: "◐", label: "Toggle theme", run: () => { settings.theme = settings.theme === "dark" ? "light" : "dark"; saveSettings(); applySettings(); } },
