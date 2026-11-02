@@ -1,4 +1,12 @@
 import { randomUUID } from 'node:crypto'
+import { posix } from 'node:path'
+import {
+  ClientError,
+  Render,
+  SandboxCreateWaitError,
+  SandboxEndedError,
+  TimeoutError,
+} from '@renderinc/sdk'
 import { and, eq, gt } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { runnerSessions } from '@/lib/db/schema'
@@ -14,6 +22,12 @@ const RUNNER_REQUEST_TIMEOUT_MS = 15_000
 const MAX_RUNNER_RESPONSE_CHARS = 3_000_000
 const MAX_OUTPUT_CHARS = 200_000
 const EVENT_POLL_INTERVAL_MS = 350
+const RENDER_SANDBOX_WORKSPACE_ROOT = '/workspace'
+const RENDER_SANDBOX_CREATE_TIMEOUT_MS = 20_000
+const RENDER_SANDBOX_SETUP_TIMEOUT_MS = 15_000
+const MAX_SANDBOX_MANIFEST_CHARS = 64_000
+const MAX_CWD_LENGTH = 512
+const FILE_SYNC_CONCURRENCY = 8
 
 export class RunnerServiceError extends Error {
   constructor(
@@ -40,11 +54,51 @@ type RemoteSession = {
 type OutputStream = 'stdout' | 'stderr'
 type OutputCallback = (stream: OutputStream, data: string) => void
 
-function runnerConfig(runtime: RunnerRuntime): RunnerApiConfig {
-  const prefix = runtime === 'bash' ? 'LINUX' : 'WINDOWS'
-  const rawBaseUrl = process.env[`${prefix}_RUNNER_BASE_URL`]
-  const token = process.env[`${prefix}_RUNNER_TOKEN`]
-  const runtimeName = runtime === 'bash' ? 'Linux Bash' : 'Windows PowerShell'
+let renderClient: Render | undefined
+let renderClientIdentity: string | undefined
+
+function getRenderSandboxClient() {
+  const token = process.env.RENDER_API_KEY?.trim()
+  const ownerId = process.env.RENDER_WORKSPACE_ID?.trim()
+  const sandboxGroupId = process.env.RENDER_SANDBOX_GROUP_ID?.trim()
+
+  if (!token || !ownerId) {
+    throw new RunnerServiceError(
+      'Render Sandboxes is not configured on this deployment.',
+      503,
+      'runner_not_configured',
+    )
+  }
+
+  if (!/^tea-[A-Za-z0-9-]+$/.test(ownerId)) {
+    throw new RunnerServiceError(
+      'The Render workspace ID is invalid.',
+      503,
+      'runner_configuration_invalid',
+    )
+  }
+
+  if (sandboxGroupId && (!sandboxGroupId.startsWith('sbg-') || /[\r\n\0]/.test(sandboxGroupId))) {
+    throw new RunnerServiceError(
+      'The Render sandbox group ID is invalid.',
+      503,
+      'runner_configuration_invalid',
+    )
+  }
+
+  const identity = `${ownerId}:${token}`
+  if (!renderClient || renderClientIdentity !== identity) {
+    renderClient = new Render({ token, ownerId })
+    renderClientIdentity = identity
+  }
+
+  return { sandboxes: renderClient.sandboxes, sandboxGroupId: sandboxGroupId || undefined }
+}
+
+function windowsRunnerConfig(): RunnerApiConfig {
+  const rawBaseUrl = process.env.WINDOWS_RUNNER_BASE_URL
+  const token = process.env.WINDOWS_RUNNER_TOKEN
+  const runtimeName = 'Windows PowerShell'
 
   if (!rawBaseUrl || !token) {
     throw new RunnerServiceError(
@@ -88,8 +142,7 @@ function runnerConfig(runtime: RunnerRuntime): RunnerApiConfig {
   return { baseUrl, token }
 }
 
-async function requestRunner(
-  runtime: RunnerRuntime,
+async function requestWindowsRunner(
   endpoint: string,
   options: {
     method: 'GET' | 'POST' | 'PUT' | 'DELETE'
@@ -97,7 +150,7 @@ async function requestRunner(
     timeoutMs?: number
   },
 ): Promise<unknown> {
-  const { baseUrl, token } = runnerConfig(runtime)
+  const { baseUrl, token } = windowsRunnerConfig()
   const url = new URL(endpoint.replace(/^\/+/, ''), `${baseUrl.toString().replace(/\/+$/, '')}/`)
   const hasBody = options.body !== undefined
 

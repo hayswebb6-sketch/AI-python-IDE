@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@renderinc/sdk": "^1.6.0",
     "better-auth": "^1.7.15",
     "drizzle-orm": "^0.45.4",
     "next": "^16.4.4",
