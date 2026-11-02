@@ -9,8 +9,8 @@
  *   - supervising the Python and JavaScript workers
  */
 
-import { registerPythonIntelliSense } from "./completions.js?v=28";
-import { createShell } from "./shell.js?v=28";
+import { registerPythonIntelliSense } from "./completions.js?v=29";
+import { createShell } from "./shell.js?v=29";
 
 const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
 const STORAGE_KEY = "pyide.workspace.v2";
@@ -273,6 +273,9 @@ const state = {
   batchCalc: { display: "0", accumulator: null, operator: null, waitingForOperand: false },
   running: false,
   pendingRun: null,
+  pendingPip: null,
+  pipInstalling: false,
+  pipRequestId: 0,
 };
 
 let shell = null;
@@ -1604,8 +1607,12 @@ function shellHost() {
     clear: clearTerminal,
     write: (text, kind) => writeTerminal(text, kind),
     runPython: async (key, lines) => {
+      if (state.pipInstalling) {
+        writeTerminal("python: wait for pip installation to finish.\n", "err");
+        return false;
+      }
       if (state.runtime !== "ready") {
-        writeTerminal("python: the Python runtime is still starting", "err");
+        writeTerminal("python: the Python runtime is still starting.\n", "err");
         return false;
       }
       return runPythonFile(key, lines);
@@ -1615,12 +1622,59 @@ function shellHost() {
     requestText: (options) => askText({ ...options, inputType: "text" }),
     requestSecret: (options) => askText({ ...options, inputType: "password" }),
     pip: async (packages) => {
-      if (state.runtime !== "ready" && state.runtime !== "running") {
-        writeTerminal("pip: the Python runtime is still starting", "err");
+      const specs = Array.isArray(packages)
+        ? packages.map((packageSpec) => String(packageSpec).trim()).filter(Boolean)
+        : [];
+      if (!specs.length) {
+        writeTerminal("pip: specify at least one package.\n", "err");
         return false;
       }
-      state.worker?.postMessage({ type: "pip", packages });
-      return true;
+      if (state.running || state.runtime === "running" || state.pendingRun) {
+        writeTerminal("pip: wait for the Python program to finish.\n", "err");
+        return false;
+      }
+      if (state.pipInstalling) {
+        writeTerminal("pip: another installation is already in progress.\n", "err");
+        return false;
+      }
+
+      state.pipInstalling = true;
+      updateRunButtons();
+
+      try {
+        if (state.runtime !== "ready") {
+          writeTerminal("Starting Python runtime for pip…\n", "sys");
+          await ensureRuntime();
+        }
+
+        if (state.runtime !== "ready" || !state.worker) {
+          writeTerminal("pip: Python runtime is unavailable.\n", "err");
+          return false;
+        }
+        if (state.running || state.runtime === "running" || state.pendingRun) {
+          writeTerminal("pip: wait for the Python program to finish.\n", "err");
+          return false;
+        }
+
+        const requestId = ++state.pipRequestId;
+        return await new Promise((resolve) => {
+          state.pendingPip = { requestId, resolve };
+          try {
+            state.worker.postMessage({ type: "pip", requestId, packages: specs });
+          } catch (error) {
+            writeTerminal(`pip: ${error?.message || error}\n`, "err");
+            settlePendingPip(false, requestId);
+          }
+        });
+      } catch (error) {
+        writeTerminal(`pip: ${error?.message || error}\n`, "err");
+        return false;
+      } finally {
+        if (state.pipInstalling && !state.pendingPip) {
+          state.pipInstalling = false;
+          updateRunButtons();
+        }
+      }
     },
     resetWorkspace: async () => resetWorkspace(),
     version: () => `Python ${state.pyVersion} · Pyodide ${PYODIDE_VERSION} · browser runtime`,
@@ -1763,12 +1817,11 @@ dom.promptForm.addEventListener("click", (event) => {
 
 function updateRunButtons() {
   const running = state.runtime === "running" || state.jsRunning || state.batchRunning;
-  const hasActive = Boolean(state.active);
-  dom.btnRun.disabled = running || !hasActive;
-  dom.btnRunMenu.disabled = running || !hasActive;
+  const canRun = !running && !state.pipInstalling && Boolean(state.active);
+  dom.btnRun.disabled = !canRun;
+  dom.btnRunMenu.disabled = !canRun;
   dom.btnStop.disabled = !running;
   if (dom.batchStop) dom.batchStop.disabled = !state.batchRunning;
-  if (dom.batchCreateScript) dom.batchCreateScript.disabled = state.batchRunning;
 }
 
 function setRuntime(next, text) {
@@ -1783,22 +1836,42 @@ function setRuntime(next, text) {
   updateRunButtons();
 }
 
+const runtimeReadyResolvers = [];
+
+function resolveRuntimeReadyWaiters() {
+  while (runtimeReadyResolvers.length) runtimeReadyResolvers.shift()();
+}
+
+function settlePendingPip(ok, requestId) {
+  const pending = state.pendingPip;
+  if (!pending || (requestId !== undefined && pending.requestId !== requestId)) return false;
+  state.pendingPip = null;
+  state.pipInstalling = false;
+  updateRunButtons();
+  pending.resolve(Boolean(ok));
+  return true;
+}
+
 function startWorker() {
+  if (state.pendingPip) settlePendingPip(false, state.pendingPip.requestId);
   if (state.worker) state.worker.terminate();
   state.worker = new Worker(new URL("assets/worker.js", document.baseURI));
 
   state.worker.addEventListener("message", onWorkerMessage);
   state.worker.addEventListener("error", (event) => {
+    const runtimeError = `Runtime error: ${event.message || "unknown"}`;
+    const pipWasInstalling = state.pipInstalling;
     setRuntime("error", "Runtime crashed");
     dbg("worker error", event.message);
-    writePythonOutput(`Runtime error: ${event.message || "unknown"}`, "err");
+    if (pipWasInstalling) writeTerminal(runtimeError, "err");
+    else writePythonOutput(runtimeError, "err");
     setPythonIoStatus("Python runtime error.", "error");
+    if (state.pendingPip) settlePendingPip(false, state.pendingPip.requestId);
+    resolveRuntimeReadyWaiters();
   });
 
   setRuntime("loading", "Starting runtime…");
 }
-
-const runtimeReadyResolvers = [];
 
 function ensureRuntime() {
   if (state.runtime === "ready") return Promise.resolve();
@@ -1912,6 +1985,8 @@ function onWorkerMessage({ data }) {
       } else if (data.state === "error") {
         setRuntime("error", data.message || "Runtime error");
         setPythonIoStatus(data.message || "Python runtime error.", "error");
+        if (state.pendingPip) settlePendingPip(false, state.pendingPip.requestId);
+        resolveRuntimeReadyWaiters();
       } else {
         setRuntime("loading", data.message || "Loading…");
         setPythonIoStatus(data.message || "Starting Python…", "running");
@@ -1919,18 +1994,27 @@ function onWorkerMessage({ data }) {
       break;
     }
 
-    case "fatal":
+    case "fatal": {
+      const fatalMessage = data.text || "Fatal runtime error";
+      const pipWasInstalling = state.pipInstalling;
       dbg("worker fatal", data.text);
-      writePythonOutput(data.text || "Fatal runtime error", "err");
+      setRuntime("error", "Runtime crashed");
+      if (pipWasInstalling) writeTerminal(fatalMessage, "err");
+      else writePythonOutput(fatalMessage, "err");
       setPythonIoStatus("Python runtime error.", "error");
+      if (state.pendingPip) settlePendingPip(false, state.pendingPip.requestId);
+      resolveRuntimeReadyWaiters();
       break;
+    }
 
     case "stdout":
-      writePythonOutput(data.text, "");
+      if (state.pipInstalling) writeTerminal(data.text, "");
+      else writePythonOutput(data.text, "");
       break;
 
     case "stderr":
-      writePythonOutput(data.text, "err");
+      if (state.pipInstalling) writeTerminal(data.text, "err");
+      else writePythonOutput(data.text, "err");
       break;
 
     case "run-start":
@@ -1958,6 +2042,10 @@ function onWorkerMessage({ data }) {
       break;
 
     case "pip-done":
+      if (state.pendingPip?.requestId === data.requestId) {
+        settlePendingPip(Boolean(data.ok), data.requestId);
+        setRuntime("ready", `Python ${state.pyVersion} ready`);
+      }
       break;
 
     case "done":
@@ -2690,7 +2778,7 @@ function batchWorkspaceSnapshot() {
 function startBatchWorker() {
   if (state.batchWorker) return state.batchWorker;
   try {
-    const worker = new Worker(new URL("./batch-worker.js?v=28", import.meta.url));
+    const worker = new Worker(new URL("./batch-worker.js?v=29", import.meta.url));
     state.batchWorker = worker;
     state.batchInitialized = false;
     worker.addEventListener("message", handleBatchWorkerMessage);
@@ -3077,12 +3165,28 @@ async function runPythonFile(name, stdin) {
 
 async function runFile(name, stdin) {
   if (!state.files.has(name)) return false;
+  if (state.pipInstalling) {
+    toast("Wait for pip installation to finish.");
+    return false;
+  }
+  if (state.running || state.pendingRun) {
+    toast("A Python program is already running.");
+    return false;
+  }
   snapshotActive();
   showConsole("io");
   clearPythonOutput();
   setPythonIoStatus(`Starting ${name}…`, "running");
 
   await ensureRuntime();
+  if (state.pipInstalling) {
+    toast("Wait for pip installation to finish.");
+    return false;
+  }
+  if (state.running || state.pendingRun) {
+    toast("A Python program is already running.");
+    return false;
+  }
   if (state.runtime !== "ready") {
     setPythonIoStatus("Python runtime is unavailable.", "error");
     return false;

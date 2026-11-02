@@ -250,6 +250,11 @@ async function handleRun(message) {
     post({ type: "done", ok: false, ms: 0, files: {} });
     return;
   }
+  if (running) {
+    post({ type: "stderr", text: "Python is busy with another operation.\n" });
+    post({ type: "done", ok: false, ms: 0, files: {} });
+    return;
+  }
 
   running = true;
   stdinQueue = Array.isArray(message.stdin) ? message.stdin.map(String) : [];
@@ -310,9 +315,30 @@ async function handleTkEvent(message) {
 }
 
 async function handlePip(message) {
-  const packages = Array.isArray(message.packages) ? message.packages : [];
-  if (!packages.length) return;
+  const requestId = message.requestId;
+  const packages = Array.isArray(message.packages)
+    ? message.packages.map((packageSpec) => String(packageSpec).trim()).filter(Boolean)
+    : [];
+  const finish = (ok) => post({ type: "pip-done", requestId, ok });
 
+  if (!py) {
+    post({ type: "stderr", text: "Python is not ready yet.\n" });
+    finish(false);
+    return;
+  }
+  if (running) {
+    post({ type: "stderr", text: "Python is busy with another operation.\n" });
+    finish(false);
+    return;
+  }
+  if (!packages.length) {
+    post({ type: "stderr", text: "pip: specify at least one package.\n" });
+    finish(false);
+    return;
+  }
+
+  running = true;
+  let ok = false;
   post({ type: "stdout", text: `\nInstalling ${packages.join(", ")}…\n` });
   try {
     py.globals.set("__ide_pkgs", JSON.stringify(packages));
@@ -321,10 +347,13 @@ import json, micropip
 await micropip.install(json.loads(__ide_pkgs))
 `);
     post({ type: "stdout", text: "Package installation finished.\n" });
+    ok = true;
   } catch (error) {
     post({ type: "stderr", text: formatError(error) });
+  } finally {
+    running = false;
+    finish(ok);
   }
-  post({ type: "pip-done" });
 }
 
 /* -------------------------------------------------------------------------
