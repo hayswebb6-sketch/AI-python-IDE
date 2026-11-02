@@ -104,6 +104,10 @@ function saveSessionUsername(value) {
 
 const TEMPLATES = {
   blank: { name: "script.txt", content: "" },
+  batch: {
+    name: "hello.bat",
+    content: "@echo off\ntitle Batch PC demo\necho Hello, %USERNAME%!\necho Files in this virtual workspace:\ndir\n",
+  },
 };
 
 /* ==========================================================================
@@ -181,6 +185,23 @@ const dom = {
   btnStop: $("btn-stop"),
   btnRestart: $("btn-restart"),
   btnSettings: $("btn-settings"),
+  btnBatchPc: $("btn-batch-pc"),
+  batchPcDialog: $("batch-pc-dialog"),
+  batchPcClose: $("batch-pc-close"),
+  batchStop: $("batch-stop"),
+  batchCreateScript: $("batch-pc-create-script"),
+  batchNotepadOpen: $("batch-notepad-open"),
+  batchNotepadFilename: $("batch-notepad-filename"),
+  batchNotepadPreview: $("batch-notepad-preview"),
+  batchCommandForm: $("batch-command-form"),
+  batchCommandInput: $("batch-command-input"),
+  batchPromptLabel: $("batch-prompt-label"),
+  batchOutput: $("batch-output"),
+  batchWindowTitle: $("batch-pc-window-title"),
+  batchFileList: $("batch-file-list"),
+  batchTaskList: $("batch-task-list"),
+  batchStart: $("batch-start"),
+  batchStartMenu: $("batch-start-menu"),
   runMenu: $("run-menu"),
 
   newMenu: $("new-menu"),
@@ -241,6 +262,9 @@ const state = {
   worker: null,
   jsWorker: null,
   jsRunning: false,
+  batchWorker: null,
+  batchRunning: false,
+  batchInitialized: false,
   running: false,
   pendingRun: null,
 };
@@ -331,7 +355,7 @@ function announce(message) {
   dom.srLive.textContent = message;
 }
 
-function askText({ title, label, value = "", hint = "", multiline = false, confirm = "OK" }) {
+function askText({ title, label, value = "", hint = "", multiline = false, confirm = "OK", inputType = "text" }) {
   return new Promise((resolve) => {
     dom.dialogTitle.textContent = title;
     dom.dialogLabel.textContent = label;
@@ -343,10 +367,15 @@ function askText({ title, label, value = "", hint = "", multiline = false, confi
     const field = multiline ? dom.dialogTextarea : dom.dialogInput;
     dom.dialogInput.hidden = multiline;
     dom.dialogTextarea.hidden = !multiline;
+    if (!multiline) dom.dialogInput.type = inputType === "password" ? "password" : "text";
     field.value = value;
 
     const finish = (result) => {
       dom.dialog.removeEventListener("close", onClose);
+      if (!multiline) {
+        dom.dialogInput.value = "";
+        dom.dialogInput.type = "text";
+      }
       resolve(result);
     };
     const onClose = () => {
@@ -475,7 +504,8 @@ const LANGUAGE_DOCS = {
   c: "https://en.cppreference.com/w/c",
   cpp: "https://en.cppreference.com/w/cpp",
   java: "https://docs.oracle.com/en/java/",
-  go: "https://go.dev/doc/",
+  csharp: "https://learn.microsoft.com/en-us/dotnet/csharp/",
+  go: "https://go.dev/doc/", 
   rust: "https://doc.rust-lang.org/",
   sql: "https://www.sqlite.org/docs.html",
   lua: "https://www.lua.org/manual/5.4/",
@@ -534,7 +564,7 @@ const LANGUAGE_DEFS = {
   ini: { label: "INI/Config", short: "ini", runnable: false },
   vb: { label: "Visual Basic", short: "vb", runnable: false },
   abap: { label: "ABAP", short: "abap", runnable: false },
-  batch: { label: "Batch", short: "bat", runnable: false },
+  batch: { label: "Batch", short: "bat", runnable: true },
   c: { label: "C", short: "c", runnable: false },
   cpp: { label: "C++", short: "cpp", runnable: false },
   python: { label: "Python", short: "py", runnable: true },
@@ -548,6 +578,12 @@ const LANGUAGE_DEFS = {
   powershell: { label: "PowerShell", short: "ps1", runnable: false },
   plaintext: { label: "Plain Text", short: "txt", runnable: false },
 };
+
+const MONACO_LANGUAGE_IDS = { batch: "bat" };
+
+function monacoLanguageId(language) {
+  return MONACO_LANGUAGE_IDS[language] || language;
+}
 
 const EXTENSION_LANGUAGE = {
   go: "go",
@@ -712,7 +748,8 @@ function refreshLanguage() {
   const model = name ? state.models.get(name) : null;
   if (monaco && model && !model.isDisposed()) {
     const language = languageFor(name);
-    if (model.getLanguageId() !== language) monaco.editor.setModelLanguage(model, language);
+    const monacoLanguage = monacoLanguageId(language);
+  if (model.getLanguageId() !== monacoLanguage) monaco.editor.setModelLanguage(model, monacoLanguage);
   }
   updateHtmlPreviewVisibility();
 }
@@ -1201,7 +1238,7 @@ function ensureModel(name) {
 
   model = monaco.editor.createModel(
     state.files.get(name) ?? "",
-    languageFor(name),
+    monacoLanguageId(languageFor(name)),
     monaco.Uri.parse(`file:///workspace/${name.split("/").map(encodeURIComponent).join("/")}`)
   );
   state.models.set(name, model);
@@ -1588,6 +1625,9 @@ function shellHost() {
       return runPythonFile(key, lines, { quiet: true });
     },
     runJavaScript: async (key) => runJavaScript(key, { quiet: true }),
+    runBatch: async (key) => runBatchFile(key),
+    requestText: (options) => askText({ ...options, inputType: "text" }),
+    requestSecret: (options) => askText({ ...options, inputType: "password" }),
     pip: async (packages) => {
       if (state.runtime !== "ready" && state.runtime !== "running") {
         writeTerminal("pip: the Python runtime is still starting", "err");
@@ -2651,12 +2691,14 @@ function runActive() {
     runLuaFile(state.active);
   } else if (language === "sql") {
     runSqlFile(state.active);
-  } else if (language === "shell" || language === "batch") {
+  } else if (language === "shell") {
     runShellFile(state.active);
+  } else if (language === "batch") {
+    runBatchFile(state.active);
   } else if (language === "html") {
     runHtmlFile(state.active);
   } else {
-    toast(`${languageLabel(language)} files are editing-only — Run supports Python, JavaScript, Shell and HTML preview.`);
+    toast(`${languageLabel(language)} files are editing-only — Run supports Python, JavaScript, Lua, SQL, Shell, Batch, and HTML preview.`);
   }
 }
 
@@ -3500,11 +3542,14 @@ const LANGUAGE_COMPLETIONS = {
       { label: "case", insertText: "case ${1} in\n  ${2})\n    ;;\nesac", detail: "case statement" },
     ],
   },
-  bat: {
-    keywords: ["@echo","off","echo","set","if","else","for","do","in","goto","call","exit","pause","rem","cls","cd","dir","copy","del","move","mkdir","rmdir","start","taskkill","ping","timeout"],
+  batch: {
+    keywords: ["@echo","off","echo","set","if","else","for","do","in","goto","call","exit","pause","rem","cls","cd","dir","type","copy","del","erase","move","ren","mkdir","rmdir","start","tasklist","taskkill","ping","ipconfig","systeminfo","title","color","ver","run"],
     snippets: [
-      { label: "if", insertText: "if ${1} (\n  ${2}\n)", detail: "if block" },
-      { label: "for", insertText: "for %%i in (${1}) do (\n  ${2}\n)", detail: "for loop" },
+      { label: "if", insertText: "if exist \"${1:file.txt}\" (\n  ${2:echo Found}\n)", detail: "if exist block" },
+      { label: "for", insertText: "for %%i in (${1:one two three}) do (\n  echo %%i\n)", detail: "for loop" },
+      { label: "forl", insertText: "for /L %%i in (1,1,${1:5}) do echo %%i", detail: "numeric loop" },
+      { label: "setp", insertText: "set /p ${1:answer}=Enter a value: ", detail: "prompt for input" },
+      { label: "seta", insertText: "set /a ${1:count}=0", detail: "integer variable" },
     ],
   },
   html: {
@@ -3538,6 +3583,219 @@ const LANGUAGE_COMPLETIONS = {
       { label: "table", insertText: "| ${1:Col} | ${2:Col} |\n|---|---|\n| ${3} | ${4} |", detail: "table" },
     ],
   },
+  powershell: {
+    keywords: ["param","function","filter","class","enum","using","begin","process","end","if","elseif","else","switch","foreach","for","while","do","try","catch","finally","throw","return","break","continue","Write-Output","Write-Host","Get-ChildItem","Get-Content","Set-Content","New-Item","Remove-Item","Get-Process","Where-Object","ForEach-Object","Get-LocalUser","New-LocalUser"],
+    snippets: [
+      { label: "function", insertText: "function ${1:Verb-Noun} {\n  param(${2})\n  ${3}\n}", detail: "function" },
+      { label: "foreach", insertText: "foreach ($${1:item} in $${2:items}) {\n  ${3}\n}", detail: "foreach loop" },
+      { label: "try", insertText: "try {\n  ${1}\n} catch {\n  ${2}\n} finally {\n  ${3}\n}", detail: "try/catch/finally" },
+    ],
+  },
+  sql: {
+    keywords: ["SELECT","FROM","WHERE","JOIN","LEFT JOIN","RIGHT JOIN","INNER JOIN","GROUP BY","ORDER BY","HAVING","LIMIT","OFFSET","INSERT INTO","VALUES","UPDATE","SET","DELETE FROM","CREATE TABLE","ALTER TABLE","DROP TABLE","WITH","AS","DISTINCT","UNION","CASE","WHEN","THEN","ELSE","END","NULL","PRIMARY KEY","FOREIGN KEY","NOT NULL","AND","OR","IN","BETWEEN","LIKE","COUNT","SUM","AVG","MIN","MAX","ASC","DESC","BEGIN","COMMIT","ROLLBACK"],
+    snippets: [
+      { label: "select", insertText: "SELECT ${1:column}\nFROM ${2:table}\nWHERE ${3:condition};", detail: "SELECT query" },
+      { label: "cte", insertText: "WITH ${1:items} AS (\n  SELECT ${2:column}\n  FROM ${3:table}\n)\nSELECT * FROM ${1:items};", detail: "common table expression" },
+      { label: "create-table", insertText: "CREATE TABLE ${1:table_name} (\n  id INTEGER PRIMARY KEY,\n  ${2:column_name} TEXT NOT NULL\n);", detail: "create table" },
+    ],
+  },
+  lua: {
+    keywords: ["and","break","do","else","elseif","end","false","for","function","goto","if","in","local","nil","not","or","repeat","return","then","true","until","while","pairs","ipairs","print","require","tostring","type","table","math","string","io"],
+    snippets: [
+      { label: "function", insertText: "local function ${1:name}(${2})\n  ${3}\nend", detail: "local function" },
+      { label: "pairs", insertText: "for ${1:key}, ${2:value} in pairs(${3:table}) do\n  ${4}\nend", detail: "pairs loop" },
+      { label: "main", insertText: "local function main()\n  ${1}\nend\n\nmain()", detail: "main function" },
+    ],
+  },
+  php: {
+    keywords: ["abstract","and","array","as","break","callable","case","catch","class","clone","const","continue","declare","default","do","echo","else","elseif","empty","endfor","endforeach","endif","endswitch","endwhile","enum","extends","false","final","finally","fn","for","foreach","function","global","if","implements","include","instanceof","interface","match","namespace","new","null","or","private","protected","public","readonly","require","return","static","switch","throw","trait","true","try","use","var","while","yield"],
+    snippets: [
+      { label: "php", insertText: "<?php\n${1}\n", detail: "PHP opening tag" },
+      { label: "function", insertText: "function ${1:name}(${2}) {\n  ${3}\n}", detail: "function" },
+      { label: "foreach", insertText: "foreach (${1:$items} as ${2:$item}) {\n  ${3}\n}", detail: "foreach loop" },
+    ],
+  },
+  ruby: {
+    keywords: ["alias","and","begin","break","case","class","def","defined?","do","else","elsif","end","ensure","false","for","if","in","module","next","nil","not","or","redo","rescue","retry","return","self","super","then","true","undef","unless","until","when","while","yield","puts","require"],
+    snippets: [
+      { label: "def", insertText: "def ${1:name}(${2})\n  ${3}\nend", detail: "method" },
+      { label: "class", insertText: "class ${1:Name}\n  def initialize(${2})\n    ${3}\n  end\nend", detail: "class" },
+      { label: "each", insertText: "${1:items}.each do |${2:item}|\n  ${3}\nend", detail: "each block" },
+    ],
+  },
+  csharp: {
+    keywords: ["abstract","as","async","await","base","bool","break","byte","case","catch","char","class","const","continue","decimal","delegate","do","double","else","enum","event","explicit","extern","false","finally","float","for","foreach","if","implicit","in","int","interface","internal","is","lock","namespace","new","null","object","operator","out","override","params","private","protected","public","readonly","ref","return","sealed","static","string","struct","switch","this","throw","true","try","using","var","virtual","void","while","Console.WriteLine"],
+    snippets: [
+      { label: "main", insertText: "static void Main(string[] args)\n{\n  ${1}\n}", detail: "main method" },
+      { label: "cw", insertText: "Console.WriteLine(${1});", detail: "write line" },
+      { label: "class", insertText: "public class ${1:Name}\n{\n  ${2}\n}", detail: "class" },
+    ],
+  },
+  yaml: {
+    keywords: ["true","false","null","yes","no","on","off"],
+    snippets: [
+      { label: "list", insertText: "- ${1:item}\n- ${2:item}", detail: "YAML list" },
+      { label: "mapping", insertText: "${1:key}:\n  ${2:property}: ${3:value}", detail: "nested mapping" },
+    ],
+  },
+  xml: {
+    keywords: ["xml version","encoding","xmlns","xmlns:xsi","xsi:schemaLocation"],
+    snippets: [
+      { label: "xml", insertText: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<${1:root}>\n  ${2}\n</${1:root}>", detail: "XML document" },
+      { label: "element", insertText: "<${1:element}>${2}</${1:element}>", detail: "element" },
+    ],
+  },
+  swift: {
+    keywords: ["associatedtype","class","deinit","enum","extension","fileprivate","func","import","init","inout","internal","let","open","operator","private","protocol","public","rethrows","static","struct","subscript","typealias","var","where","while","guard","defer","if","else","for","in","return","throw","try","await","async","print"],
+    snippets: [
+      { label: "func", insertText: "func ${1:name}(${2})${3: -> Void} {\n  ${4}\n}", detail: "function" },
+      { label: "struct", insertText: "struct ${1:Name} {\n  ${2}\n}", detail: "struct" },
+      { label: "guard", insertText: "guard ${1:condition} else {\n  return\n}", detail: "guard statement" },
+    ],
+  },
+  kotlin: {
+    keywords: ["as","break","class","continue","do","else","false","for","fun","if","in","interface","is","null","object","package","return","super","this","throw","true","try","typealias","typeof","val","var","when","while","suspend","data","sealed","override","println"],
+    snippets: [
+      { label: "fun", insertText: "fun ${1:name}(${2}): ${3:Unit} {\n  ${4}\n}", detail: "function" },
+      { label: "data-class", insertText: "data class ${1:Name}(\n  val ${2:field}: ${3:String}\n)", detail: "data class" },
+      { label: "main", insertText: "fun main() {\n  ${1}\n}", detail: "main function" },
+    ],
+  },
+  r: {
+    keywords: ["function","if","else","repeat","while","for","in","next","break","TRUE","FALSE","NULL","NA","NaN","Inf","library","require","data.frame","c","list","print","return","apply","lapply","sapply","ggplot"],
+    snippets: [
+      { label: "function", insertText: "${1:name} <- function(${2}) {\n  ${3}\n}", detail: "function" },
+      { label: "data-frame", insertText: "${1:data} <- data.frame(\n  ${2:column} = ${3:value}\n)", detail: "data frame" },
+      { label: "pipe", insertText: "${1:data} |>\n  ${2:transform}()", detail: "native pipe" },
+    ],
+  },
+  dart: {
+    keywords: ["abstract","as","assert","async","await","break","case","catch","class","const","continue","default","do","else","enum","extends","false","final","finally","for","Function","if","implements","import","in","is","late","library","mixin","new","null","on","part","required","return","sealed","set","static","super","switch","this","throw","true","try","var","void","while","with","yield","print"],
+    snippets: [
+      { label: "main", insertText: "void main() {\n  ${1}\n}", detail: "main function" },
+      { label: "class", insertText: "class ${1:Name} {\n  ${2}\n}", detail: "class" },
+      { label: "async", insertText: "Future<${1:void}> ${2:load}() async {\n  ${3}\n}", detail: "async function" },
+    ],
+  },
+  perl: {
+    keywords: ["my","our","local","state","sub","package","use","require","if","elsif","else","unless","while","until","for","foreach","given","when","return","last","next","redo","die","eval","print","say","undef","strict","warnings"],
+    snippets: [
+      { label: "sub", insertText: "sub ${1:name} {\n  my (${2}) = @_;\n  ${3}\n}", detail: "subroutine" },
+      { label: "foreach", insertText: "foreach my $${1:item} (@${2:items}) {\n  ${3}\n}", detail: "foreach loop" },
+    ],
+  },
+  scala: {
+    keywords: ["abstract","case","catch","class","def","do","else","enum","export","extends","false","final","finally","for","forSome","given","if","implicit","import","lazy","match","new","null","object","override","package","private","protected","return","sealed","super","then","this","throw","trait","true","try","type","val","var","while","yield","println"],
+    snippets: [
+      { label: "object", insertText: "object ${1:Main} {\n  def main(args: Array[String]): Unit = {\n    ${2}\n  }\n}", detail: "main object" },
+      { label: "def", insertText: "def ${1:name}(${2}): ${3:Unit} = {\n  ${4}\n}", detail: "method" },
+    ],
+  },
+  julia: {
+    keywords: ["begin","break","catch","const","continue","do","else","elseif","end","export","false","finally","for","function","global","if","import","let","local","macro","module","mutable","nothing","primitive","quote","return","struct","true","try","using","where","while","println"],
+    snippets: [
+      { label: "function", insertText: "function ${1:name}(${2})\n  ${3}\nend", detail: "function" },
+      { label: "for", insertText: "for ${1:item} in ${2:items}\n  ${3}\nend", detail: "for loop" },
+    ],
+  },
+  fsharp: {
+    keywords: ["abstract","and","as","assert","base","begin","class","default","delegate","do","done","downcast","downto","elif","else","end","exception","extern","false","finally","for","fun","function","global","if","in","inherit","inline","interface","let","match","member","module","mutable","namespace","new","null","of","open","or","override","private","public","rec","return","static","then","to","true","try","type","use","val","void","when","while","with","yield"],
+    snippets: [
+      { label: "let-fn", insertText: "let ${1:name} ${2:args} =\n    ${3}", detail: "function binding" },
+      { label: "match", insertText: "match ${1:value} with\n| ${2:case} -> ${3}\n| _ -> ${4}", detail: "match expression" },
+    ],
+  },
+  clojure: {
+    keywords: ["def","defn","defonce","fn","let","loop","recur","if","when","cond","case","do","quote","var","ns","require","use","map","filter","reduce","println","str","nil","true","false","and","or","not"],
+    snippets: [
+      { label: "defn", insertText: "(defn ${1:name} [${2:args}]\n  ${3})", detail: "function" },
+      { label: "let", insertText: "(let [${1:name} ${2:value}]\n  ${3})", detail: "let binding" },
+    ],
+  },
+  "objective-c": {
+    keywords: ["@interface","@implementation","@end","@property","@synthesize","@autoreleasepool","BOOL","YES","NO","nil","self","super","static","const","void","int","float","double","if","else","for","while","return","NSObject","NSString","NSArray","NSDictionary"],
+    snippets: [
+      { label: "interface", insertText: "@interface ${1:Name} : NSObject\n${2}\n@end", detail: "interface" },
+      { label: "implementation", insertText: "@implementation ${1:Name}\n${2}\n@end", detail: "implementation" },
+    ],
+  },
+  pascal: {
+    keywords: ["and","array","begin","case","const","div","do","downto","else","end","file","for","function","goto","if","implementation","in","interface","mod","nil","not","object","of","or","packed","procedure","program","record","repeat","set","then","to","type","unit","until","uses","var","while","with","write","writeln"],
+    snippets: [
+      { label: "program", insertText: "program ${1:HelloWorld};\n\nbegin\n  ${2}\nend.", detail: "program" },
+      { label: "procedure", insertText: "procedure ${1:Name};\nbegin\n  ${2}\nend;", detail: "procedure" },
+    ],
+  },
+  coffeescript: {
+    keywords: ["and","or","not","is","isnt","if","then","else","unless","until","while","for","in","of","by","when","return","class","extends","super","this","yes","no","on","off","null","undefined","own","new","typeof","instanceof","delete","throw","try","catch","finally"],
+    snippets: [
+      { label: "function", insertText: "${1:name} = (${2}) ->\n  ${3}", detail: "function" },
+      { label: "class", insertText: "class ${1:Name}\n  constructor: (${2}) ->\n    ${3}", detail: "class" },
+    ],
+  },
+  scss: {
+    keywords: ["@use","@forward","@import","@mixin","@include","@extend","@function","@return","@if","@else","@for","@each","@while","@media","@at-root","!default","!important"],
+    snippets: [
+      { label: "mixin", insertText: "@mixin ${1:name}(${2}) {\n  ${3}\n}", detail: "mixin" },
+      { label: "media", insertText: "@media (max-width: ${1:768px}) {\n  ${2}\n}", detail: "media query" },
+    ],
+  },
+  less: {
+    keywords: ["@import","@media","@keyframes","@supports","@font-face","important","when","and","not","or"],
+    snippets: [
+      { label: "mixin", insertText: ".${1:mixin}(@${2:value}) {\n  ${3}\n}", detail: "mixin" },
+      { label: "media", insertText: "@media (max-width: ${1:768px}) {\n  ${2}\n}", detail: "media query" },
+    ],
+  },
+  dockerfile: {
+    keywords: ["FROM","RUN","CMD","LABEL","EXPOSE","ENV","ADD","COPY","ENTRYPOINT","VOLUME","USER","WORKDIR","ARG","ONBUILD","STOPSIGNAL","HEALTHCHECK","SHELL","AS"],
+    snippets: [
+      { label: "node-image", insertText: "FROM node:${1:22}-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci\nCOPY . .\nCMD [\"npm\", \"start\"]", detail: "Node container" },
+      { label: "python-image", insertText: "FROM python:${1:3.12}-slim\nWORKDIR /app\nCOPY . .\nCMD [\"python\", \"main.py\"]", detail: "Python container" },
+    ],
+  },
+  graphql: {
+    keywords: ["query","mutation","subscription","fragment","on","type","interface","union","enum","input","scalar","schema","directive","implements","extend","ID","String","Int","Float","Boolean"],
+    snippets: [
+      { label: "query", insertText: "query ${1:Name} {\n  ${2:field}\n}", detail: "query" },
+      { label: "mutation", insertText: "mutation ${1:Name}($${2:id}: ID!) {\n  ${3:action}(id: $${2:id})\n}", detail: "mutation" },
+      { label: "type", insertText: "type ${1:Name} {\n  id: ID!\n  ${2:field}: ${3:String}\n}", detail: "type definition" },
+    ],
+  },
+  proto: {
+    keywords: ["syntax","package","import","option","message","enum","service","rpc","returns","stream","oneof","repeated","optional","required","map","reserved","extensions","string","bytes","bool","int32","int64","uint32","uint64","double","float"],
+    snippets: [
+      { label: "message", insertText: "message ${1:Name} {\n  ${2:string} ${3:field} = 1;\n}", detail: "message" },
+      { label: "service", insertText: "service ${1:Name} {\n  rpc ${2:Call} (${3:Request}) returns (${4:Response});\n}", detail: "service" },
+    ],
+  },
+  hcl: {
+    keywords: ["resource","data","variable","output","module","provider","terraform","locals","for_each","count","depends_on","lifecycle","dynamic","required_providers","source","version","true","false","null"],
+    snippets: [
+      { label: "resource", insertText: "resource \"${1:aws_instance}\" \"${2:example}\" {\n  ${3}\n}", detail: "resource block" },
+      { label: "variable", insertText: "variable \"${1:name}\" {\n  type    = ${2:string}\n  default = ${3}\n}", detail: "variable block" },
+    ],
+  },
+  ini: {
+    keywords: ["true","false","yes","no","on","off","null"],
+    snippets: [
+      { label: "section", insertText: "[${1:section}]\n${2:key}=${3:value}", detail: "config section" },
+    ],
+  },
+  vb: {
+    keywords: ["And","As","Boolean","ByRef","ByVal","Call","Case","Catch","Class","Const","Continue","Dim","Do","Each","Else","ElseIf","End","Enum","Event","Exit","False","Finally","For","Function","Get","If","Imports","In","Interface","Loop","Module","Namespace","New","Next","Nothing","Not","Of","Optional","Overrides","Private","Protected","Public","Return","Select","Shared","String","Structure","Sub","Then","Throw","To","Try","True","Using","While","With","WriteLine"],
+    snippets: [
+      { label: "sub", insertText: "Public Sub ${1:Name}()\n  ${2}\nEnd Sub", detail: "subroutine" },
+      { label: "main", insertText: "Module Program\n  Sub Main()\n    ${1}\n  End Sub\nEnd Module", detail: "main module" },
+    ],
+  },
+  abap: {
+    keywords: ["REPORT","DATA","TYPES","CLASS","METHOD","METHODS","FORM","PERFORM","IF","ELSEIF","ELSE","ENDIF","CASE","WHEN","ENDCASE","DO","ENDDO","LOOP","ENDLOOP","SELECT","FROM","WHERE","INTO","TABLE","APPEND","READ TABLE","WRITE","CLEAR","MOVE","CALL FUNCTION","TRY","CATCH","ENDTRY"],
+    snippets: [
+      { label: "report", insertText: "REPORT ${1:z_report}.\n\nWRITE: / '${2:Hello}'.", detail: "report" },
+      { label: "select", insertText: "SELECT ${1:*}\n  FROM ${2:table}\n  INTO TABLE @DATA(${3:result})\n  WHERE ${4:condition}.\nENDSELECT.", detail: "select" },
+    ],
+  },
 };
 
 function registerLanguageCompletions(monaco) {
@@ -3545,8 +3803,8 @@ function registerLanguageCompletions(monaco) {
     const keywords = data.keywords || [];
     const snippets = data.snippets || [];
     if (!keywords.length && !snippets.length) continue;
-    monaco.languages.registerCompletionItemProvider(language, {
-      triggerCharacters: [".", ">", ":", "#", "<", "/"],
+    monaco.languages.registerCompletionItemProvider(monacoLanguageId(language), {
+      triggerCharacters: [".", ">", ":", "#", "<", "/", "$", "%", "@"],
       provideCompletionItems(model, position) {
         const word = model.getWordUntilPosition(position);
         const range = {

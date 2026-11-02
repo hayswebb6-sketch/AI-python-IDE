@@ -18,6 +18,7 @@
 const DEFAULT_ENV = {
   HOME: "/",
   USER: "guest",
+  USERNAME: "guest",
   HOSTNAME: "pyide",
   SHELL: "/bin/bash",
   PWD: "/",
@@ -86,6 +87,31 @@ const BASH = {
   whoami: "whoami",
   hostname: "hostname",
   uname: "uname",
+  id: "id",
+  groups: "groups",
+  users: "users",
+  who: "who",
+  sudo: "sudo",
+  su: "su",
+  useradd: "useradd",
+  adduser: "adduser",
+  userdel: "userdel",
+  deluser: "userdel",
+  passwd: "passwd",
+  usermod: "usermod",
+  groupadd: "groupadd",
+  groupdel: "groupdel",
+  free: "free",
+  df: "df",
+  du: "du",
+  ps: "ps",
+  uptime: "uptime",
+  cal: "cal",
+  ping: "ping",
+  ipconfig: "ipconfig",
+  systeminfo: "systeminfo",
+  tasklist: "tasklist",
+  batch: "batch",
   sleep: "sleep",
   true: "true",
   false: "false",
@@ -128,6 +154,10 @@ const PWSH = {
   "get-date": "date", date: "date",
   "get-childitem-tree": "tree", tree: "tree",
   "get-uname": "uname", uname: "uname",
+  "get-process": "ps", gps: "ps", ps: "ps",
+  "get-localuser": "users", "new-localuser": "adduser", "remove-localuser": "userdel",
+  "get-localgroup": "groups", "new-localgroup": "groupadd", "remove-localgroup": "groupdel",
+  "get-computerinfo": "systeminfo", "get-netipconfiguration": "ipconfig",
   "start-sleep": "sleep", sleep: "sleep",
   "where-object": "grep",
   "foreach-object": "echo",
@@ -370,6 +400,64 @@ function formatSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)}M`;
 }
 
+const VIRTUAL_PASSWORD_ITERATIONS = 80_000;
+
+function bytesToHex(bytes) {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function createVirtualPassword(password) {
+  if (!globalThis.crypto?.subtle || !globalThis.crypto?.getRandomValues) {
+    throw new Error("Secure browser cryptography is unavailable.");
+  }
+  const salt = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  const key = await globalThis.crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const digest = await globalThis.crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: VIRTUAL_PASSWORD_ITERATIONS, hash: "SHA-256" },
+    key,
+    256
+  );
+  return { salt: [...salt], digest: bytesToHex(new Uint8Array(digest)) };
+}
+
+async function verifyVirtualPassword(password, record) {
+  if (!record || !globalThis.crypto?.subtle) return false;
+  const key = await globalThis.crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const digest = await globalThis.crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: Uint8Array.from(record.salt), iterations: VIRTUAL_PASSWORD_ITERATIONS, hash: "SHA-256" },
+    key,
+    256
+  );
+  const candidate = bytesToHex(new Uint8Array(digest));
+  if (candidate.length !== record.digest.length) return false;
+  let difference = 0;
+  for (let index = 0; index < candidate.length; index += 1) {
+    difference |= candidate.charCodeAt(index) ^ record.digest.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
+const VIRTUAL_SYSTEM_USER_PATTERN = /^[a-z_][a-z0-9_-]{0,31}$/;
+const SUDO_SAFE_COMMANDS = new Set([
+  "useradd", "adduser", "userdel", "passwd", "usermod", "groupadd", "groupdel",
+  "groups", "id", "users", "who", "whoami", "hostname", "uname", "date",
+  "df", "du", "free", "ps", "uptime", "cal", "ping", "ipconfig", "systeminfo", "tasklist",
+  "list", "cat", "touch", "mkdir", "rmdir", "rm", "cp", "mv", "tree", "stat",
+  "grep", "head", "tail", "wc", "sort", "uniq", "cut", "find", "echo", "clear", "help", "which",
+]);
+
 /* -------------------------------------------------------------------------
  * Shell
  * ---------------------------------------------------------------------- */
@@ -381,7 +469,20 @@ export class Shell {
     this.cwd = "/";
     this.previousCwd = "/";
     this.env = { ...DEFAULT_ENV };
-    this.setUsername(options.username);
+    this.groups = new Map([["root", 0], ["sudo", 27], ["users", 100]]);
+    this.accounts = new Map();
+    this.accounts.set("root", {
+      name: "root",
+      uid: 0,
+      gid: 0,
+      groups: new Set(["root", "sudo"]),
+      home: "/root",
+      password: null,
+    });
+    this.nextUid = 1000;
+    this.nextGid = 101;
+    this.userStack = [];
+    this.startedAt = Date.now();
     this.aliases = new Map();
     this.history = Array.isArray(options.history) ? options.history.slice(-500) : [];
     this.lastExit = 0;
@@ -389,12 +490,34 @@ export class Shell {
 
     const savedDirs = typeof host.loadDirs === "function" ? host.loadDirs() : [];
     this.dirs = new Set((savedDirs || []).map((dir) => this.normalize(String(dir))));
+    this.setUsername(options.username);
     this.setMode(this.mode, { silent: true });
   }
 
+  createAccountRecord(name, groups = ["users"], uid = null) {
+    const existing = this.accounts.get(name);
+    if (existing) return existing;
+    const assignedUid = uid ?? this.nextUid++;
+    const primaryGroup = groups.find((group) => this.groups.has(group)) || "users";
+    const account = {
+      name,
+      uid: assignedUid,
+      gid: this.groups.get(primaryGroup) ?? 100,
+      groups: new Set(groups),
+      home: `/home/${name}`,
+      password: null,
+    };
+    this.accounts.set(name, account);
+    return account;
+  }
+
   setUsername(value) {
-    const username = String(value ?? "").trim();
-    this.env.USER = /^[A-Za-z_][A-Za-z0-9._-]{0,31}$/.test(username) ? username : "guest";
+    const candidate = String(value ?? "").trim();
+    const username = /^[A-Za-z_][A-Za-z0-9._-]{0,31}$/.test(candidate) ? candidate : "guest";
+    const account = this.createAccountRecord(username, ["users", "sudo"]);
+    this.env.USER = username;
+    this.env.USERNAME = username;
+    this.env.HOME = account.home;
   }
 
   /* -- filesystem ------------------------------------------------------- */
@@ -908,6 +1031,60 @@ export class Shell {
       case "testpath":
         return this.testPathCommand(args);
 
+      case "sudo":
+        return this.sudoCommand(args, stdin);
+
+      case "su":
+        return this.suCommand(args);
+
+      case "useradd":
+        return this.userAddCommand(args, false);
+
+      case "adduser":
+        return this.userAddCommand(args, true);
+
+      case "userdel":
+        return this.userDelCommand(args);
+
+      case "passwd":
+        return this.passwdCommand(args);
+
+      case "usermod":
+        return this.userModCommand(args);
+
+      case "groupadd":
+        return this.groupAddCommand(args);
+
+      case "groupdel":
+        return this.groupDelCommand(args);
+
+      case "id":
+        return this.idCommand(args);
+
+      case "groups":
+        return this.groupsCommand(args);
+
+      case "users":
+        return this.usersCommand();
+
+      case "who":
+        return this.whoCommand();
+
+      case "free":
+      case "df":
+      case "du":
+      case "ps":
+      case "uptime":
+      case "cal":
+      case "ping":
+      case "ipconfig":
+      case "systeminfo":
+      case "tasklist":
+        return this.virtualSystemCommand(command, args);
+
+      case "batch":
+        return this.runFileCommand(args, stdin, "batch");
+
       case "date":
         return this.ok(`${new Date().toString()}\n`);
 
@@ -918,7 +1095,7 @@ export class Shell {
         return this.ok(`${this.env.HOSTNAME}\n`);
 
       case "uname":
-        return this.ok("Pyide 1.0 browser wasm\n");
+        return this.ok("PyIDE Virtual OS · browser sandbox\n");
 
       case "sleep": {
         const seconds = Math.max(0, Math.min(10, Number(args[0] ?? 0) || 0));
@@ -941,6 +1118,14 @@ export class Shell {
       }
 
       case "exit":
+        if (this.userStack.length) {
+          const previous = this.userStack.pop();
+          this.env.USER = previous.USER;
+          this.env.USERNAME = previous.USERNAME;
+          this.env.HOME = previous.HOME;
+          this.env.PWD = previous.PWD;
+          return this.ok(`Returned to ${this.env.USER}.\n`);
+        }
         this.host.write("This is a browser tab — close the tab or press Stop to end a run.", "sys");
         return this.ok();
 
@@ -1471,6 +1656,322 @@ export class Shell {
     return this.ok(out ? `${out}\n` : "");
   }
 
+  currentAccount(name = this.env.USER) {
+    return this.accounts.get(name) || null;
+  }
+
+  async requestVirtualSecret(options) {
+    if (typeof this.host.requestSecret !== "function") return null;
+    return this.host.requestSecret(options);
+  }
+
+  async requestVirtualText(options) {
+    if (typeof this.host.requestText !== "function") return null;
+    return this.host.requestText(options);
+  }
+
+  async sudoCommand(args, stdin) {
+    if (args[0] === "-l") {
+      return this.ok(`Allowed simulated admin commands:\n${[...SUDO_SAFE_COMMANDS].sort().join("  ")}\n`);
+    }
+    if (!args.length) return this.fail("usage: sudo <safe virtual command>\n", 2);
+
+    const caller = this.currentAccount();
+    if (!caller || (this.env.USER !== "root" && !caller.groups.has("sudo"))) {
+      return this.fail(`sudo: ${this.env.USER} is not in the simulated sudo group\n`);
+    }
+
+    const [requestedName, ...requestedArgs] = args;
+    const vocabulary = this.mode === "pwsh" ? PWSH : BASH;
+    const definition = vocabulary[String(requestedName).toLowerCase()];
+    if (!definition) return this.fail(`sudo: ${requestedName}: command is not available in the virtual shell\n`);
+    const command = typeof definition === "string" ? definition : definition.cmd;
+    const commandArgs = [...(typeof definition === "object" ? definition.pre || [] : []), ...requestedArgs];
+    if (!SUDO_SAFE_COMMANDS.has(command)) {
+      return this.fail("sudo is limited to allow-listed virtual commands; host programs and files are never accessed\n");
+    }
+
+    if (this.env.USER !== "root") {
+      if (!caller.password) {
+        return this.fail(`sudo: no demo password is set for ${caller.name}; run 'passwd' first\n`);
+      }
+      const password = await this.requestVirtualSecret({
+        title: "Virtual sudo",
+        label: `Password for ${caller.name}`,
+        hint: "Demo-only password. It is kept in memory for this tab and is never sent to a server.",
+        confirm: "Continue",
+      });
+      if (password === null) return { code: 1, out: "sudo: cancelled\n" };
+      if (!(await verifyVirtualPassword(password, caller.password))) {
+        return this.fail("sudo: incorrect demo password\n");
+      }
+    }
+
+    const previousEnv = { ...this.env };
+    this.env.USER = "root";
+    this.env.USERNAME = "root";
+    this.env.HOME = "/root";
+    this.env.SUDO_USER = caller.name;
+    try {
+      return await this.run(command, commandArgs, stdin);
+    } finally {
+      this.env = previousEnv;
+    }
+  }
+
+  async userAddCommand(args, interactive) {
+    if (this.env.USER !== "root") {
+      return this.fail(`useradd: permission denied; use sudo useradd <name>\n`);
+    }
+    if (args.includes("--help") || args.includes("-h")) {
+      return this.ok("usage: useradd [-m] [-G group,...] <name>  (creates a virtual account only)\n");
+    }
+
+    let username = "";
+    let requestedGroups = [];
+    for (let index = 0; index < args.length; index += 1) {
+      const argument = args[index];
+      if (["-m", "--create-home"].includes(argument)) continue;
+      if (["-d", "--home-dir", "-s", "--shell"].includes(argument)) {
+        index += 1;
+        continue;
+      }
+      if (["-G", "--groups", "-g"].includes(argument)) {
+        requestedGroups = String(args[index + 1] || "").split(",").filter(Boolean);
+        index += 1;
+        continue;
+      }
+      if (argument.startsWith("-")) return this.fail(`useradd: unsupported option ${argument}\n`);
+      if (!username) username = argument;
+    }
+
+    if (!username && interactive) {
+      const answer = await this.requestVirtualText({
+        title: "Add virtual user",
+        label: "Username",
+        hint: "Use a Linux-style alias. This account exists only in the current browser tab.",
+        value: "",
+        confirm: "Add user",
+      });
+      if (answer === null) return { code: 1, out: "adduser: cancelled\n" };
+      username = answer.trim().toLowerCase();
+    }
+
+    username = String(username).toLowerCase();
+    if (!VIRTUAL_SYSTEM_USER_PATTERN.test(username)) {
+      return this.fail("useradd: use 1–32 lowercase letters, digits, underscores, or hyphens; start with a letter or underscore\n", 2);
+    }
+    if (this.accounts.has(username)) return this.fail(`useradd: user '${username}' already exists\n`);
+    const unknownGroup = requestedGroups.find((group) => !this.groups.has(group));
+    if (unknownGroup) return this.fail(`useradd: group '${unknownGroup}' does not exist\n`);
+
+    const groups = [...new Set(["users", ...requestedGroups])];
+    const account = this.createAccountRecord(username, groups);
+    return this.ok(`Created virtual user '${account.name}' (uid ${account.uid}). Set a tab-only demo password with 'sudo passwd ${account.name}'.\n`);
+  }
+
+  userDelCommand(args) {
+    if (this.env.USER !== "root") return this.fail("userdel: permission denied; use sudo userdel <name>\n");
+    const username = args.find((argument) => !argument.startsWith("-"));
+    if (!username) return this.fail("usage: userdel <name>  (virtual users only)\n", 2);
+    if (username === "root") return this.fail("userdel: the virtual root account cannot be removed\n");
+    if (!this.accounts.has(username)) return this.fail(`userdel: user '${username}' does not exist\n`);
+    if (this.userStack.some((entry) => entry.USER === username)) {
+      return this.fail(`userdel: user '${username}' is active in this shell\n`);
+    }
+    this.accounts.delete(username);
+    return this.ok(`Removed virtual user '${username}'. No host account or files were changed.\n`);
+  }
+
+  async passwdCommand(args) {
+    const username = args.find((argument) => !argument.startsWith("-")) || this.env.USER;
+    const account = this.currentAccount(username);
+    if (!account) return this.fail(`passwd: user '${username}' does not exist\n`);
+    if (username !== this.env.USER && this.env.USER !== "root") {
+      return this.fail("passwd: only the account owner or virtual root can change this password\n");
+    }
+
+    if (username === this.env.USER && account.password) {
+      const currentPassword = await this.requestVirtualSecret({
+        title: `Verify ${username}`,
+        label: "Current demo password",
+        hint: "This password is only for the simulated shell in this tab.",
+        confirm: "Verify",
+      });
+      if (currentPassword === null) return { code: 1, out: "passwd: cancelled\n" };
+      if (!(await verifyVirtualPassword(currentPassword, account.password))) {
+        return this.fail("passwd: authentication failed\n");
+      }
+    }
+
+    const password = await this.requestVirtualSecret({
+      title: `Set password for ${username}`,
+      label: "New demo password",
+      hint: "Never use a real password. This is stored as a salted digest in memory for this tab only.",
+      confirm: "Continue",
+    });
+    if (password === null) return { code: 1, out: "passwd: cancelled\n" };
+    if (password.length < 4) return this.fail("passwd: demo passwords must be at least 4 characters\n");
+
+    const confirmation = await this.requestVirtualSecret({
+      title: `Confirm password for ${username}`,
+      label: "Enter the new demo password again",
+      hint: "The password itself is never printed or saved to the workspace.",
+      confirm: "Set password",
+    });
+    if (confirmation === null) return { code: 1, out: "passwd: cancelled\n" };
+    if (password !== confirmation) return this.fail("passwd: passwords do not match\n");
+
+    try {
+      account.password = await createVirtualPassword(password);
+      return this.ok(`Password updated for '${username}' in this tab only.\n`);
+    } catch {
+      return this.fail("passwd: secure browser cryptography is unavailable; use an HTTPS preview\n");
+    }
+  }
+
+  userModCommand(args) {
+    if (this.env.USER !== "root") return this.fail("usermod: permission denied; use sudo usermod\n");
+    const groupOption = args.findIndex((argument) => ["-aG", "-G", "--groups"].includes(argument));
+    if (groupOption === -1 || !args[groupOption + 1]) {
+      return this.fail("usage: usermod -aG <group,...> <name>  (virtual groups only)\n", 2);
+    }
+    const username = args[groupOption + 2];
+    const account = this.currentAccount(username);
+    if (!account) return this.fail(`usermod: user '${username || ""}' does not exist\n`);
+    const groupNames = args[groupOption + 1].split(",").filter(Boolean);
+    const unknownGroup = groupNames.find((group) => !this.groups.has(group));
+    if (unknownGroup) return this.fail(`usermod: group '${unknownGroup}' does not exist\n`);
+    const append = args[groupOption] === "-aG";
+    account.groups = new Set(append ? [...account.groups, ...groupNames] : ["users", ...groupNames]);
+    return this.ok(`Updated virtual groups for '${username}': ${[...account.groups].join(", ")}\n`);
+  }
+
+  groupAddCommand(args) {
+    if (this.env.USER !== "root") return this.fail("groupadd: permission denied; use sudo groupadd <name>\n");
+    const name = args.find((argument) => !argument.startsWith("-"));
+    if (!name || !VIRTUAL_SYSTEM_USER_PATTERN.test(name)) {
+      return this.fail("usage: groupadd <lowercase-name>  (virtual groups only)\n", 2);
+    }
+    if (this.groups.has(name)) return this.fail(`groupadd: group '${name}' already exists\n`);
+    this.groups.set(name, this.nextGid++);
+    return this.ok(`Created virtual group '${name}'.\n`);
+  }
+
+  groupDelCommand(args) {
+    if (this.env.USER !== "root") return this.fail("groupdel: permission denied; use sudo groupdel <name>\n");
+    const name = args.find((argument) => !argument.startsWith("-"));
+    if (!name) return this.fail("usage: groupdel <name>  (virtual groups only)\n", 2);
+    if (["root", "sudo", "users"].includes(name)) return this.fail(`groupdel: protected virtual group '${name}'\n`);
+    if (!this.groups.has(name)) return this.fail(`groupdel: group '${name}' does not exist\n`);
+    if ([...this.accounts.values()].some((account) => account.groups.has(name))) {
+      return this.fail(`groupdel: group '${name}' is still assigned to a virtual user\n`);
+    }
+    this.groups.delete(name);
+    return this.ok(`Removed virtual group '${name}'.\n`);
+  }
+
+  idCommand(args) {
+    const username = args.find((argument) => !argument.startsWith("-")) || this.env.USER;
+    const account = this.currentAccount(username);
+    if (!account) return this.fail(`id: '${username}': no such virtual user\n`);
+    const groupNames = [...account.groups];
+    const groups = groupNames.map((group) => `${this.groups.get(group) ?? account.gid}(${group})`).join(",");
+    const primary = groupNames[0] || "users";
+    return this.ok(`uid=${account.uid}(${account.name}) gid=${this.groups.get(primary) ?? account.gid}(${primary}) groups=${groups}\n`);
+  }
+
+  groupsCommand(args) {
+    const username = args.find((argument) => !argument.startsWith("-")) || this.env.USER;
+    const account = this.currentAccount(username);
+    if (!account) return this.fail(`groups: '${username}': no such virtual user\n`);
+    return this.ok(`${account.name} : ${[...account.groups].join(" ")}\n`);
+  }
+
+  usersCommand() {
+    return this.ok(`${[...this.accounts.keys()].sort().join(" ")}\n`);
+  }
+
+  whoCommand() {
+    return this.ok(`${this.env.USER}  browser-session  ${new Date().toLocaleTimeString()}\n`);
+  }
+
+  async suCommand(args) {
+    const username = args.find((argument) => !argument.startsWith("-")) || "root";
+    const account = this.currentAccount(username);
+    if (!account) return this.fail(`su: user '${username}' does not exist\n`);
+    if (username === this.env.USER) return this.ok();
+
+    if (this.env.USER !== "root") {
+      if (!account.password) return this.fail(`su: no demo password is set for '${username}'\n`);
+      const password = await this.requestVirtualSecret({
+        title: `Switch to ${username}`,
+        label: `Password for ${username}`,
+        hint: "Virtual account only. Never enter a real password.",
+        confirm: "Switch user",
+      });
+      if (password === null) return { code: 1, out: "su: cancelled\n" };
+      if (!(await verifyVirtualPassword(password, account.password))) return this.fail("su: authentication failure\n");
+    }
+
+    this.userStack.push({ USER: this.env.USER, USERNAME: this.env.USERNAME, HOME: this.env.HOME, PWD: this.env.PWD });
+    this.env.USER = account.name;
+    this.env.USERNAME = account.name;
+    this.env.HOME = account.home;
+    this.env.PWD = this.cwd;
+    return this.ok(`Switched to virtual user '${username}'. Use 'exit' to return.\n`);
+  }
+
+  virtualSystemCommand(command, args) {
+    const files = [...this.files().entries()];
+    const workspaceBytes = files.reduce((total, [, content]) => total + new TextEncoder().encode(String(content)).length, 0);
+
+    switch (command) {
+      case "free":
+        return this.ok("Virtual memory (simulated)\n              total        used        free\nMem:          256M         64M        192M\nSwap:           0M          0M          0M\n");
+      case "df":
+        return this.ok(`Filesystem  Size  Used  Avail  Use%  Mounted on\nworkspace   128M  ${formatSize(workspaceBytes)}  ${formatSize(Math.max(0, 128 * 1024 * 1024 - workspaceBytes))}  ${Math.min(100, Math.round(workspaceBytes / (128 * 1024 * 1024) * 100))}%  /workspace (virtual)\n`);
+      case "du": {
+        const target = this.resolve(args.find((argument) => !argument.startsWith("-")) || ".");
+        const prefix = `${this.key(target).replace(/\/$/, "")}/`;
+        const size = files.reduce((total, [name, content]) => {
+          if (name === this.key(target) || name.startsWith(prefix)) return total + new TextEncoder().encode(String(content)).length;
+          return total;
+        }, 0);
+        return this.ok(`${formatSize(size)}\t${target}\n`);
+      }
+      case "ps":
+        return this.ok("Virtual processes only (no host processes)\n  PID USER     COMMAND\n    1 pyide    browser-ide\n    2 shell    bash-simulator\n    3 runtime  wasm-runtime\n");
+      case "tasklist":
+        return this.ok("Virtual tasks only (no host processes)\nImage Name                 PID   Session\npyide-browser.exe           1    Browser tab\nvirtual-shell.exe           2    Browser tab\nwasm-runtime.exe             3    Browser tab\n");
+      case "uptime": {
+        const seconds = Math.floor((Date.now() - this.startedAt) / 1000);
+        return this.ok(`Browser shell uptime: ${seconds} seconds\n`);
+      }
+      case "cal": {
+        const now = new Date();
+        const first = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
+        const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        const title = now.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+        const cells = [...Array(first).fill("  "), ...Array.from({ length: days }, (_, index) => String(index + 1).padStart(2))];
+        const rows = [];
+        for (let index = 0; index < cells.length; index += 7) rows.push(cells.slice(index, index + 7).join(" "));
+        return this.ok(`${title}\nSu Mo Tu We Th Fr Sa\n${rows.join("\n")}\n`);
+      }
+      case "ping": {
+        const target = args.filter((argument) => !argument.startsWith("-")).at(-1) || "127.0.0.1";
+        const safeTarget = String(target).replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 100) || "127.0.0.1";
+        return this.ok(`PING ${safeTarget} (simulated; no network request)\n64 bytes from ${safeTarget}: seq=1 ttl=64 time=0.0 ms\n--- ${safeTarget} statistics ---\n1 packet transmitted, 1 received\n`);
+      }
+      case "ipconfig":
+        return this.ok("Virtual network adapter (simulated; offline)\n  IPv4 Address: 192.0.2.10\n  Subnet Mask: 255.255.255.0\n  Default Gateway: 192.0.2.1\n");
+      case "systeminfo":
+        return this.ok("System Information (simulated)\nComputer: PYIDE-BROWSER\nOS: PyIDE Virtual OS\nEnvironment: isolated browser tab\nHost access: disabled\n");
+      default:
+        return this.fail(`${command}: not implemented\n`);
+    }
+  }
+
   helpText() {
     if (this.mode === "pwsh") {
       return `PowerShell-style shell (runs in your browser)
@@ -1490,20 +1991,24 @@ Files & folders
   Get-Help / help           this message
   Clear-Host / cls          clear the terminal
 
-Pipelines, redirects, operators
-  ls | Select-String py     get-content main.py | wc -l
-  echo hi > notes.txt       echo more >> notes.txt
-  command1 && command2      command1 || command2      cmd1 ; cmd2
+Virtual system & accounts
+  Get-LocalUser / users     list simulated users
+  New-LocalUser / adduser   create a browser-only user
+  passwd                    set a session-only demo password
+  sudo <safe command>       simulated admin; never elevates the host
+  id, groups, ps, free, df, uptime
 
 IDE commands
-  run [file]                run Python or JavaScript
+  run [file]                run Python, JavaScript, or Batch
   python [file]             force the Python runtime
   node [file]               force the JavaScript runtime
   pip install numpy         install a Pyodide package
   open [file]               open in the editor
   download [file]           download a file
   shell bash | pwsh         switch shell mode
-  version, reset, history, aliases ($env:NAME works too)`;
+  version, reset, history, aliases ($env:NAME works too)
+
+All users and passwords exist only in this browser tab. Never use a real password.`;
     }
 
     return `bash-style shell (runs in your browser)
@@ -1524,6 +2029,14 @@ Files & folders
 Text processing
   head/tail [-n N], wc, grep [-invc] pattern, sort [-rnu], uniq [-c], cut -d, -f1
 
+Virtual system & accounts
+  id, groups, users, who, whoami
+  sudo <safe command>       simulated admin; never elevates the host
+  useradd/adduser <name>    create a virtual account (sudo required)
+  passwd [name]             set a session-only demo password
+  usermod, userdel, groupadd, groupdel
+  ps, free, df, du, uptime, cal, ping, ipconfig (simulated)
+
 Pipelines & redirection
   ls | grep py              cat main.py | wc -l
   echo hi > notes.txt       echo more >> notes.txt
@@ -1531,14 +2044,17 @@ Pipelines & redirection
   $VAR, \${VAR}, $?, globs (*.py), aliases (alias ll='ls -l')
 
 IDE commands
-  run [file]                run Python or JavaScript
+  run [file]                run Python, JavaScript, Lua, SQL, Batch, or Shell
   python [file]             force the Python runtime
   node [file]               force the JavaScript runtime
+  batch [file.bat]          open the virtual Batch PC
   pip install numpy         install a Pyodide package
   open [file]               open in the editor
   download [file]           download a file
   shell pwsh | bash         switch shell mode
-  version, reset, history, clear, help`;
+  version, reset, history, clear, help
+
+This is a simulated browser shell. sudo cannot access or change your computer.`;
   }
 
   async runFileCommand(args, stdin, forced) {
@@ -1567,7 +2083,11 @@ IDE commands
       const ok = await this.host.runJavaScript(key);
       return { code: ok ? 0 : 1, out: "", streamed: true };
     }
-    return this.fail(`run: ${target}: neither Python nor JavaScript\n`);
+    if (language === "batch" && typeof this.host.runBatch === "function") {
+      const ok = await this.host.runBatch(key);
+      return { code: ok === false ? 1 : 0, out: "", streamed: true };
+    }
+    return this.fail(`run: ${target}: unsupported file type\n`);
   }
 
   async pipCommand(args) {

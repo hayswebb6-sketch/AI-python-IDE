@@ -76,6 +76,9 @@
       <button class="btn ghost icon-only" id="btn-restart" title="Restart the Python runtime" aria-label="Restart runtime">
         <svg class="icon"><use href="#i-refresh"/></svg>
       </button>
+      <button class="btn ghost icon-only" id="btn-batch-pc" title="Open the virtual Batch PC" aria-label="Open the virtual Batch PC" aria-haspopup="dialog" aria-controls="batch-pc-dialog">
+        <svg class="icon"><use href="#i-window"/></svg>
+      </button>
 
       <div class="menu-wrap">
         <div class="split">
@@ -112,6 +115,7 @@
             </button>
             <div class="menu" id="new-menu" role="menu" hidden>
               <button role="menuitem" data-template="blank"><span>Blank file</span><kbd>py</kbd></button>
+              <button role="menuitem" data-template="batch"><span>Batch script</span><kbd>bat</kbd></button>
             </div>
           </div>
         </div>
@@ -125,7 +129,7 @@
           <button class="btn ghost small" id="btn-export" title="Download the active file">
             <svg class="icon"><use href="#i-download"/></svg> Export
           </button>
-          <input type="file" id="file-input" accept=".py,.txt,.md,.json,.csv,.html,.js,.css" multiple hidden>
+          <input type="file" id="file-input" accept=".py,.txt,.md,.json,.csv,.html,.js,.jsx,.ts,.tsx,.css,.scss,.sql,.lua,.sh,.bash,.bat,.cmd,.ps1,.yml,.yaml,.xml,.php,.rb,.cs,.go,.rs,.java,.cpp,.c" multiple hidden>
         </div>
       </aside>
 
@@ -246,6 +250,114 @@
         <button class="btn primary" type="submit">Continue</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog class="batch-pc-dialog" id="batch-pc-dialog" aria-labelledby="batch-pc-title" aria-describedby="batch-pc-description">
+    <div class="batch-pc">
+      <header class="batch-pc-header">
+        <div class="batch-pc-brand">
+          <span class="batch-pc-mark" aria-hidden="true">PC</span>
+          <div>
+            <h2 id="batch-pc-title">Batch PC</h2>
+            <p id="batch-pc-description">A simulated desktop. Commands can only access this IDE&apos;s virtual workspace.</p>
+          </div>
+        </div>
+        <div class="batch-pc-header-actions">
+          <span class="batch-pc-sandbox">Browser sandbox</span>
+          <button class="icon-btn" id="batch-pc-close" type="button" aria-label="Close Batch PC" title="Close Batch PC">
+            <svg class="icon"><use href="#i-close"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="batch-pc-screen">
+        <nav class="batch-desktop-shortcuts" aria-label="Virtual desktop apps">
+          <button class="batch-desktop-shortcut" type="button" data-batch-app="cmd" aria-pressed="true">
+            <span class="batch-shortcut-glyph batch-glyph-cmd" aria-hidden="true">CMD</span><span>Command Prompt</span>
+          </button>
+          <button class="batch-desktop-shortcut" type="button" data-batch-app="files" aria-pressed="false">
+            <span class="batch-shortcut-glyph batch-glyph-files" aria-hidden="true">DIR</span><span>Files</span>
+          </button>
+          <button class="batch-desktop-shortcut" type="button" data-batch-app="notepad" aria-pressed="false">
+            <span class="batch-shortcut-glyph batch-glyph-notepad" aria-hidden="true">TXT</span><span>Notepad</span>
+          </button>
+          <button class="batch-desktop-shortcut" type="button" data-batch-app="tasks" aria-pressed="false">
+            <span class="batch-shortcut-glyph batch-glyph-tasks" aria-hidden="true">SYS</span><span>Task Manager</span>
+          </button>
+          <button class="batch-desktop-shortcut" type="button" data-batch-app="settings" aria-pressed="false">
+            <span class="batch-shortcut-glyph batch-glyph-settings" aria-hidden="true">CFG</span><span>About this PC</span>
+          </button>
+        </nav>
+
+        <section class="batch-pc-app-area" aria-label="Virtual PC workspace">
+          <div class="batch-pc-window">
+            <header class="batch-pc-windowbar">
+              <span id="batch-pc-window-title">Command Prompt</span>
+              <div class="batch-pc-header-actions">
+                <span class="batch-window-status"><span aria-hidden="true"></span> SIMULATED</span>
+                <button class="btn ghost small" type="button" id="batch-stop" disabled>Stop</button>
+              </div>
+            </header>
+
+            <section class="batch-app-view batch-cmd-view" data-batch-view="cmd" aria-label="Virtual command prompt">
+              <div class="batch-output" id="batch-output" role="log" aria-label="Batch command output" aria-live="polite" aria-relevant="additions text"></div>
+              <form class="batch-command-form" id="batch-command-form" autocomplete="off">
+                <label id="batch-prompt-label" for="batch-command-input">C:\workspace&gt;</label>
+                <input id="batch-command-input" name="command" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Virtual Batch command" placeholder="Type help or run hello.bat">
+                <button class="btn primary small" type="submit">Run</button>
+              </form>
+            </section>
+
+            <section class="batch-app-view batch-files-view" data-batch-view="files" aria-label="Virtual workspace files" hidden>
+              <div class="batch-app-heading">
+                <div><h3>Workspace files</h3><p>These are the files already open to this IDE, not your computer&apos;s disk.</p></div>
+                <button class="btn ghost small" type="button" id="batch-pc-create-script">New .bat</button>
+              </div>
+              <ul class="batch-file-list" id="batch-file-list" aria-label="Files in virtual workspace"></ul>
+            </section>
+
+            <section class="batch-app-view batch-notepad-view" data-batch-view="notepad" aria-label="Virtual Notepad" hidden>
+              <div class="batch-app-heading">
+                <div><h3>Notepad</h3><p id="batch-notepad-filename">Open a file in the IDE editor to edit it.</p></div>
+                <button class="btn primary small" type="button" id="batch-notepad-open">Open in editor</button>
+              </div>
+              <div class="batch-notepad-preview" id="batch-notepad-preview" aria-live="polite">Choose a file from Files, then open it in the IDE editor.</div>
+            </section>
+
+            <section class="batch-app-view batch-tasks-view" data-batch-view="tasks" aria-label="Virtual Task Manager" hidden>
+              <div class="batch-app-heading"><div><h3>Task Manager</h3><p>Only simulated apps in this virtual PC appear here.</p></div></div>
+              <ul class="batch-task-list" id="batch-task-list" aria-label="Virtual processes"></ul>
+            </section>
+
+            <section class="batch-app-view batch-about-view" data-batch-view="settings" aria-label="About this virtual PC" hidden>
+              <div class="batch-about-card">
+                <span class="batch-pc-mark" aria-hidden="true">PC</span>
+                <div><h3>PyIDE Virtual PC</h3><p>Batch scripts run in a bounded browser interpreter. No host shell, programs, accounts, network, or disk are accessed.</p></div>
+              </div>
+              <dl class="batch-system-details">
+                <div><dt>Workspace</dt><dd>IDE virtual files only</dd></div>
+                <div><dt>Session</dt><dd>Current browser tab</dd></div>
+                <div><dt>Command runtime</dt><dd>Batch simulator</dd></div>
+              </dl>
+            </section>
+          </div>
+        </section>
+      </div>
+
+      <footer class="batch-taskbar">
+        <button class="batch-start" id="batch-start" type="button" aria-expanded="false" aria-controls="batch-start-menu">Start</button>
+        <span class="batch-taskbar-active" id="batch-taskbar-active">Command Prompt</span>
+        <span class="batch-taskbar-note">Virtual files · no host access</span>
+        <nav class="batch-start-menu" id="batch-start-menu" aria-label="Batch PC apps" hidden>
+          <p class="batch-start-heading">Virtual apps</p>
+          <button type="button" data-batch-app="cmd">Command Prompt</button>
+          <button type="button" data-batch-app="files">Files</button>
+          <button type="button" data-batch-app="notepad">Notepad</button>
+          <button type="button" data-batch-app="tasks">Task Manager</button>
+          <button type="button" data-batch-app="settings">About this PC</button>
+        </nav>
+      </footer>
+    </div>
   </dialog>
 
   <dialog class="dialog settings-dialog" id="settings-dialog" aria-labelledby="settings-title" aria-describedby="settings-description">
