@@ -2002,7 +2002,7 @@ IDE commands
   run [file]                run Python, JavaScript, or Batch
   python [file]             force the Python runtime
   node [file]               force the JavaScript runtime
-  pip install numpy         install a Pyodide package
+  pip install numpy         install a Pyodide-compatible package
   open [file]               open in the editor
   download [file]           download a file
   shell bash | pwsh         switch shell mode
@@ -2048,7 +2048,7 @@ IDE commands
   python [file]             force the Python runtime
   node [file]               force the JavaScript runtime
   batch [file.bat]          open the virtual Batch PC
-  pip install numpy         install a Pyodide package
+  pip install numpy         install a Pyodide-compatible package
   open [file]               open in the editor
   download [file]           download a file
   shell pwsh | bash         switch shell mode
