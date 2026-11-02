@@ -127,6 +127,26 @@ def _canvas_init(force=False):
     })
 
 
+def _resize_canvas(width=None, height=None):
+    global _CANVAS_W, _CANVAS_H
+
+    def dimension(value, current, base):
+        if value is None:
+            return current
+        number = _num(value, current)
+        if number <= 0:
+            return current
+        if number <= 1:
+            number = round(base * number)
+        return max(1, min(1600, int(number)))
+
+    next_width = dimension(width, _CANVAS_W, 720)
+    next_height = dimension(height, _CANVAS_H, 480)
+    if (next_width, next_height) != (_CANVAS_W, _CANVAS_H):
+        _CANVAS_W, _CANVAS_H = next_width, next_height
+        _canvas_init(force=True)
+
+
 def _sx(x):
     return _CANVAS_W / 2.0 + x
 
@@ -150,9 +170,27 @@ class Turtle:
         self._fill_points = []
         self._visible = True
         self._speed = 3
+        self._shape = "classic"
+        self._shape_size = (1.0, 1.0)
+        self._stamp_count = 0
         _canvas_init()
+        self._emit_cursor()
 
     # -- helpers ----------------------------------------------------------
+    def _emit_cursor(self):
+        _emit("canvas", {
+            "op": "turtle",
+            "visible": self._visible,
+            "x": _sx(self._x),
+            "y": _sy(self._y),
+            "heading": self._heading,
+            "shape": self._shape,
+            "scale": list(self._shape_size),
+            "fill": _css_color(self._fillcolor),
+            "color": _css_color(self._pencolor),
+            "width": self._pensize,
+        })
+
     def _move_to(self, nx, ny):
         x1, y1 = _sx(self._x), _sy(self._y)
         x2, y2 = _sx(nx), _sy(ny)
@@ -166,6 +204,7 @@ class Turtle:
             if self._filling:
                 self._fill_points.append((x2, y2))
         self._x, self._y = nx, ny
+        self._emit_cursor()
 
     # -- movement ---------------------------------------------------------
     def forward(self, distance):
@@ -182,11 +221,13 @@ class Turtle:
 
     def right(self, angle):
         self._heading = (self._heading - angle) % 360
+        self._emit_cursor()
 
     rt = right
 
     def left(self, angle):
         self._heading = (self._heading + angle) % 360
+        self._emit_cursor()
 
     lt = left
 
@@ -240,11 +281,13 @@ class Turtle:
     # -- pen --------------------------------------------------------------
     def penup(self):
         self._down = False
+        self._emit_cursor()
 
     pu = up = penup
 
     def pendown(self):
         self._down = True
+        self._emit_cursor()
 
     pd = down = pendown
 
@@ -1912,7 +1955,7 @@ def _browser_input(prompt=""):
     value = ideBridge.stdin()
     if value is None:
         raise EOFError(
-            "input() has no data — use “Run ▾ → Run with input…” to supply lines."
+            "input() has no data — run the file again and enter one value per line."
         )
     sys.stdout.write(str(value) + "\n")
     sys.stdout.flush()

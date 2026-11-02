@@ -16,11 +16,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=23">
+  <link rel="stylesheet" href="assets/styles.css?v=26">
 
   <!-- Monaco's AMD loader (classic script: must run before app.js) -->
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
-  <script type="module" src="assets/app.js?v=23"></script>
+  <script type="module" src="assets/app.js?v=26"></script>
 </head>
 <body>
 
@@ -62,7 +62,7 @@
         </span>
       </a>
 
-      <button class="btn ghost icon-only" id="btn-settings" title="Settings (Ctrl+,)" aria-label="Settings">
+      <button class="btn ghost icon-only" id="btn-settings" title="Settings (Ctrl+,)" aria-label="Settings" aria-haspopup="dialog" aria-controls="settings-dialog">
         <svg class="icon"><use href="#i-settings"/></svg>
       </button>
 
@@ -90,7 +90,7 @@
         </div>
         <div class="menu" id="run-menu" role="menu" hidden>
           <button role="menuitem" data-run="active"><span>Run active file</span><kbd>Ctrl ↵</kbd></button>
-          <button role="menuitem" data-run="input"><span>Run with input…</span><kbd>Ctrl ⇧ ↵</kbd></button>
+          <button role="menuitem" data-run="input"><span>Provide stdin manually…</span><kbd>Ctrl ⇧ ↵</kbd></button>
         </div>
       </div>
 
@@ -216,7 +216,7 @@
     </footer>
   </div>
 
-  <!-- ── Dialog (new file / rename / run with input) ───────────────── -->
+  <!-- ── Dialog (new file / rename / run with input) ────────��──────── -->
   <dialog class="dialog" id="dialog">
     <form method="dialog" class="dialog-form" id="dialog-form">
       <h2 class="dialog-title" id="dialog-title">Title</h2>
@@ -228,6 +228,113 @@
         <button class="btn ghost" value="cancel" id="dialog-cancel" type="button">Cancel</button>
         <button class="btn primary" value="ok" id="dialog-ok" type="submit">OK</button>
       </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog username-dialog" id="username-dialog" aria-labelledby="username-title" aria-describedby="username-description">
+    <form class="dialog-form" id="username-form" autocomplete="off">
+      <div>
+        <p class="settings-eyebrow">Personalize this session</p>
+        <h2 class="dialog-title" id="username-title">What username should your terminal use?</h2>
+        <p class="settings-description" id="username-description">This only labels the simulated shell in this browser tab. It is not sent to a server. Choose an alias rather than your real name.</p>
+      </div>
+      <label class="dialog-label" for="username-input">Terminal username</label>
+      <input class="dialog-input" id="username-input" name="terminalUsername" type="text" maxlength="32" pattern="[A-Za-z_][A-Za-z0-9._-]{0,31}" placeholder="guest" required autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-describedby="username-hint">
+      <p class="dialog-hint" id="username-hint">Start with a letter or underscore; use letters, numbers, dots, underscores, or hyphens.</p>
+      <div class="dialog-actions">
+        <button class="btn ghost" id="username-guest" type="button">Continue as guest</button>
+        <button class="btn primary" type="submit">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog settings-dialog" id="settings-dialog" aria-labelledby="settings-title" aria-describedby="settings-description">
+    <form class="dialog-form settings-form" id="settings-form" autocomplete="off">
+      <header class="settings-header">
+        <div>
+          <p class="settings-eyebrow">Preferences</p>
+          <h2 class="dialog-title" id="settings-title">Settings</h2>
+          <p class="settings-description" id="settings-description">Most preferences are saved in this browser; the terminal username lasts for this tab only.</p>
+        </div>
+        <button class="btn ghost small" id="settings-close" type="button">Close</button>
+      </header>
+
+      <div class="settings-grid">
+        <fieldset class="settings-group">
+          <legend>Appearance</legend>
+          <label class="settings-control">
+            <span class="settings-control-copy"><span class="settings-control-title">Color theme</span><span class="settings-control-hint">Choose a light or dark workspace</span></span>
+            <select data-setting="theme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>Editor</legend>
+          <label class="settings-control">
+            <span class="settings-control-copy"><span class="settings-control-title">Font size</span><span class="settings-control-hint">Code editor text size</span></span>
+            <input type="number" data-setting="fontSize" min="10" max="24" step="0.5" inputmode="decimal">
+          </label>
+          <label class="settings-control">
+            <span class="settings-control-copy"><span class="settings-control-title">Tab width</span><span class="settings-control-hint">Spaces inserted by Tab</span></span>
+            <select data-setting="tabSize">
+              <option value="2">2 spaces</option>
+              <option value="4">4 spaces</option>
+              <option value="8">8 spaces</option>
+            </select>
+          </label>
+          <label class="settings-control settings-toggle">
+            <span class="settings-control-copy"><span class="settings-control-title">Line numbers</span><span class="settings-control-hint">Show line markers</span></span>
+            <input type="checkbox" data-setting="lineNumbers">
+          </label>
+          <label class="settings-control settings-toggle">
+            <span class="settings-control-copy"><span class="settings-control-title">Word wrap</span><span class="settings-control-hint">Wrap long lines in the editor</span></span>
+            <input type="checkbox" data-setting="wordWrap">
+          </label>
+          <label class="settings-control settings-toggle">
+            <span class="settings-control-copy"><span class="settings-control-title">Minimap</span><span class="settings-control-hint">Show a code overview</span></span>
+            <input type="checkbox" data-setting="minimap">
+          </label>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>IntelliSense</legend>
+          <label class="settings-control settings-toggle">
+            <span class="settings-control-copy"><span class="settings-control-title">Quick suggestions</span><span class="settings-control-hint">Suggest names as you type</span></span>
+            <input type="checkbox" data-setting="quickSuggestions">
+          </label>
+          <label class="settings-control settings-toggle">
+            <span class="settings-control-copy"><span class="settings-control-title">Parameter hints</span><span class="settings-control-hint">Show call signatures while typing</span></span>
+            <input type="checkbox" data-setting="parameterHints">
+          </label>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>Terminal</legend>
+          <label class="settings-control">
+            <span class="settings-control-copy"><span class="settings-control-title">Terminal username</span><span class="settings-control-hint">Alias for this tab only; never sent to a server</span></span>
+            <input type="text" data-setting="username" maxlength="32" pattern="[A-Za-z_][A-Za-z0-9._-]{0,31}" required autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Terminal username">
+          </label>
+          <label class="settings-control">
+            <span class="settings-control-copy"><span class="settings-control-title">Font size</span><span class="settings-control-hint">Terminal text size</span></span>
+            <input type="number" data-setting="terminalFontSize" min="9" max="24" step="1" inputmode="numeric">
+          </label>
+          <label class="settings-control">
+            <span class="settings-control-copy"><span class="settings-control-title">Shell</span><span class="settings-control-hint">Command prompt style</span></span>
+            <select data-setting="shell">
+              <option value="bash">Bash</option>
+              <option value="pwsh">PowerShell</option>
+            </select>
+          </label>
+        </fieldset>
+      </div>
+
+      <footer class="settings-footer">
+        <button class="btn ghost" id="settings-reset" type="button">Reset defaults</button>
+        <button class="btn primary" type="submit">Done</button>
+      </footer>
     </form>
   </dialog>
 

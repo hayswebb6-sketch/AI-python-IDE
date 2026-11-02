@@ -9,15 +9,18 @@
  *   - supervising the Python and JavaScript workers
  */
 
-import { registerPythonIntelliSense } from "./completions.js";
-import { createShell } from "./shell.js";
+import { registerPythonIntelliSense } from "./completions.js?v=26";
+import { createShell } from "./shell.js?v=26";
 
 const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
 const STORAGE_KEY = "pyide.workspace.v2";
 const SETTINGS_KEY = "pyide.settings.v1";
+const USERNAME_SESSION_KEY = "pyide.shell.username.session";
 const SHELL_HISTORY_KEY = "pyide.shell.history.v1";
 const SHELL_DIRS_KEY = "pyide.shell.dirs.v1";
 const PYODIDE_VERSION = "0.26.4";
+const DEFAULT_USERNAME = "guest";
+const USERNAME_PATTERN = /^[A-Za-z_][A-Za-z0-9._-]{0,31}$/;
 
 /* ==========================================================================
  * Settings
@@ -35,20 +38,35 @@ const DEFAULT_SETTINGS = {
   parameterHints: true,
   terminalFontSize: 13,
   shell: "bash",
+  username: DEFAULT_USERNAME,
 };
 
 let settings = { ...DEFAULT_SETTINGS };
+let shouldAskForUsername = true;
+
+function normalizeUsername(value) {
+  const username = String(value ?? "").trim();
+  return USERNAME_PATTERN.test(username) ? username : "";
+}
 
 function loadSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null");
     if (saved && typeof saved === "object") {
       for (const key of Object.keys(DEFAULT_SETTINGS)) {
-        if (saved[key] !== undefined) settings[key] = saved[key];
+        if (key !== "username" && saved[key] !== undefined) settings[key] = saved[key];
       }
     }
   } catch {
     /* corrupted settings — fall back to defaults */
+  }
+  try {
+    const sessionUsername = normalizeUsername(sessionStorage.getItem(USERNAME_SESSION_KEY));
+    settings.username = sessionUsername || DEFAULT_USERNAME;
+    shouldAskForUsername = !sessionUsername;
+  } catch {
+    settings.username = DEFAULT_USERNAME;
+    shouldAskForUsername = true;
   }
   settings.theme = settings.theme === "light" ? "light" : "dark";
   settings.shell = settings.shell === "pwsh" ? "pwsh" : "bash";
@@ -59,10 +77,25 @@ function loadSettings() {
 
 function saveSettings() {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    const persistentSettings = { ...settings };
+    delete persistentSettings.username;
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(persistentSettings));
   } catch {
     /* ignore */
   }
+}
+
+function saveSessionUsername(value) {
+  const username = normalizeUsername(value);
+  if (!username) return false;
+  settings.username = username;
+  shouldAskForUsername = false;
+  try {
+    sessionStorage.setItem(USERNAME_SESSION_KEY, username);
+  } catch {
+    /* The username remains available for this page load. */
+  }
+  return true;
 }
 
 /* ==========================================================================
@@ -92,7 +125,7 @@ window.__pyideDebug = {
     jsRunning: state.jsRunning,
     files: [...state.files.keys()],
     openTabs: state.openTabs,
-    settings,
+    settings: Object.fromEntries(Object.entries(settings).filter(([key]) => key !== "username")),
     userAgent: navigator.userAgent,
   }),
 };
@@ -172,6 +205,9 @@ const dom = {
 
   settingsDialog: $("settings-dialog"),
   settingsForm: $("settings-form"),
+  usernameDialog: $("username-dialog"),
+  usernameForm: $("username-form"),
+  usernameInput: $("username-input"),
 
   palette: $("palette"),
   paletteInput: $("palette-input"),
@@ -325,16 +361,78 @@ function askText({ title, label, value = "", hint = "", multiline = false, confi
   });
 }
 
+function pythonUsesInput(source) {
+  const code = String(source ?? "").split("");
+  let quote = "";
+  let triple = false;
+  let escaped = false;
+  let comment = false;
+
+  for (let index = 0; index < code.length; index += 1) {
+    const char = code[index];
+    if (comment) {
+      if (char === "\n") comment = false;
+      else code[index] = " ";
+      continue;
+    }
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        code[index] = char === "\n" ? "\n" : " ";
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        code[index] = " ";
+        continue;
+      }
+      if (triple && char === quote && code[index + 1] === quote && code[index + 2] === quote) {
+        code[index] = code[index + 1] = code[index + 2] = " ";
+        index += 2;
+        quote = "";
+        triple = false;
+        continue;
+      }
+      code[index] = char === "\n" ? "\n" : " ";
+      if (!triple && char === quote) quote = "";
+      continue;
+    }
+    if (char === "#") {
+      comment = true;
+      code[index] = " ";
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      triple = code[index + 1] === char && code[index + 2] === char;
+      code[index] = " ";
+      if (triple) {
+        code[index + 1] = code[index + 2] = " ";
+        index += 2;
+      }
+    }
+  }
+
+  const executable = code.join("");
+  return /\binput\s*\(/.test(executable)
+    || /\bsys\s*\.\s*stdin\b/.test(executable)
+    || /\bstdin\s*\.\s*(?:read|readline|readlines)\s*\(/.test(executable);
+}
+
 async function askLines(title) {
   const value = await askText({
     title,
-    label: "Standard input — one value per line",
+    label: "Program input",
     multiline: true,
-    hint: "Each line is returned by one input() call. Leave empty to run with no input.",
+    hint: "Enter one value per line. Each line is supplied to the next input() call; prompts and output appear in the terminal.",
     confirm: "Run",
   });
   if (value === null) return null;
-  return value.split("\n").filter((line, index, all) => !(index === all.length - 1 && line === ""));
+  const normalized = value.replace(/\r\n?/g, "\n");
+  if (normalized === "") return [];
+  const lines = normalized.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  return lines;
 }
 
 /* ==========================================================================
@@ -952,32 +1050,53 @@ const THEME = {
   base: "vs-dark",
   inherit: true,
   rules: [
-    { token: "comment", foreground: "6b7896", fontStyle: "italic" },
-    { token: "keyword", foreground: "c084fc" },
-    { token: "string", foreground: "86efac" },
-    { token: "number", foreground: "fbbf24" },
-    { token: "regexp", foreground: "fca5a5" },
-    { token: "type", foreground: "7dd3fc" },
-    { token: "function", foreground: "93c5fd" },
-    { token: "variable", foreground: "dbe3f4" },
-    { token: "constant", foreground: "f9a8d4" },
-    { token: "delimiter", foreground: "94a3b8" },
+    { token: "comment", foreground: "8996ab", fontStyle: "italic" },
+    { token: "keyword", foreground: "d4a7ff", fontStyle: "bold" },
+    { token: "keyword.control", foreground: "d4a7ff", fontStyle: "bold" },
+    { token: "string", foreground: "a6e3a1" },
+    { token: "string.escape", foreground: "f5c2e7" },
+    { token: "number", foreground: "fab387" },
+    { token: "regexp", foreground: "f38ba8" },
+    { token: "type", foreground: "89dceb" },
+    { token: "type.identifier", foreground: "f9e2af" },
+    { token: "function", foreground: "89b4fa" },
+    { token: "identifier.function", foreground: "89b4fa" },
+    { token: "identifier", foreground: "dbe3f4" },
+    { token: "variable", foreground: "cdd6f4" },
+    { token: "predefined", foreground: "f9a8d4" },
+    { token: "constant", foreground: "f38ba8" },
+    { token: "operator", foreground: "89dceb" },
+    { token: "delimiter", foreground: "a6adc8" },
+    { token: "delimiter.bracket", foreground: "c4b5fd" },
   ],
   colors: {
     "editor.background": "#0c111b",
-    "editor.foreground": "#dbe3f4",
-    "editorLineNumber.foreground": "#2f3b55",
-    "editorLineNumber.activeForeground": "#7c8db3",
+    "editor.foreground": "#e6edf6",
+    "editorLineNumber.foreground": "#56647a",
+    "editorLineNumber.activeForeground": "#a8b7ca",
     "editorCursor.foreground": "#38bdf8",
     "editor.selectionBackground": "#1e3a5f",
     "editor.inactiveSelectionBackground": "#16283f",
-    "editor.lineHighlightBackground": "#101827",
+    "editor.lineHighlightBackground": "#121a27",
     "editorIndentGuide.background1": "#1a2437",
-    "editorIndentGuide.activeBackground1": "#2b3a5e",
-    "editorWidget.background": "#131a2a",
-    "editorWidget.border": "#2b3a5e",
-    "editorSuggestWidget.background": "#131a2a",
-    "editorSuggestWidget.selectedBackground": "#1d2b45",
+    "editorIndentGuide.activeBackground1": "#3a5068",
+    "editorWidget.background": "#121a25",
+    "editorWidget.foreground": "#e6edf6",
+    "editorWidget.border": "#3a5068",
+    "editorHoverWidget.background": "#121a25",
+    "editorHoverWidget.border": "#3a5068",
+    "editorSuggestWidget.background": "#121a25",
+    "editorSuggestWidget.foreground": "#e6edf6",
+    "editorSuggestWidget.border": "#3a5068",
+    "editorSuggestWidget.selectedBackground": "#243247",
+    "editorSuggestWidget.selectedForeground": "#ffffff",
+    "editorSuggestWidget.highlightForeground": "#7dd3fc",
+    "editorBracketHighlight.foreground1": "#89b4fa",
+    "editorBracketHighlight.foreground2": "#cba6f7",
+    "editorBracketHighlight.foreground3": "#a6e3a1",
+    "editorBracketHighlight.foreground4": "#f9e2af",
+    "editorBracketHighlight.foreground5": "#f38ba8",
+    "editorBracketHighlight.foreground6": "#89dceb",
     "scrollbarSlider.background": "#26314980",
     "scrollbarSlider.hoverBackground": "#33415faa",
     "minimap.background": "#0c111b",
@@ -988,16 +1107,24 @@ const LIGHT_THEME = {
   base: "vs",
   inherit: true,
   rules: [
-    { token: "comment", foreground: "8a94a6", fontStyle: "italic" },
-    { token: "keyword", foreground: "7c3aed" },
-    { token: "string", foreground: "15803d" },
+    { token: "comment", foreground: "64748b", fontStyle: "italic" },
+    { token: "keyword", foreground: "6d28d9", fontStyle: "bold" },
+    { token: "keyword.control", foreground: "6d28d9", fontStyle: "bold" },
+    { token: "string", foreground: "166534" },
+    { token: "string.escape", foreground: "be185d" },
     { token: "number", foreground: "b45309" },
     { token: "regexp", foreground: "be123c" },
     { token: "type", foreground: "0369a1" },
+    { token: "type.identifier", foreground: "92400e" },
     { token: "function", foreground: "1d4ed8" },
+    { token: "identifier.function", foreground: "1d4ed8" },
+    { token: "identifier", foreground: "1e293b" },
     { token: "variable", foreground: "1e293b" },
-    { token: "constant", foreground: "be185d" },
-    { token: "delimiter", foreground: "64748b" },
+    { token: "predefined", foreground: "be185d" },
+    { token: "constant", foreground: "9d174d" },
+    { token: "operator", foreground: "0369a1" },
+    { token: "delimiter", foreground: "475569" },
+    { token: "delimiter.bracket", foreground: "7c3aed" },
   ],
   colors: {
     "editor.background": "#ffffff",
@@ -1143,7 +1270,9 @@ async function initEditor() {
       wordWrap: settings.wordWrap ? "on" : "off",
       lineNumbers: settings.lineNumbers ? "on" : "off",
       quickSuggestions: settings.quickSuggestions,
-      suggestOnTriggerCharacters: true,
+      quickSuggestionsDelay: 90,
+      suggestOnTriggerCharacters: settings.quickSuggestions,
+      suggestSelection: "first",
       parameterHints: { enabled: settings.parameterHints },
       bracketPairColorization: { enabled: true },
       guides: { bracketPairs: true, indentation: true },
@@ -1217,6 +1346,7 @@ function applySettings() {
   if (shell) {
     const nextMode = settings.shell === "pwsh" ? "pwsh" : "bash";
     if (shell.mode !== nextMode) shell.setMode(nextMode, { silent: true });
+    shell.setUsername(settings.username);
     refreshPrompt();
   }
 
@@ -1455,7 +1585,7 @@ function shellHost() {
         writeTerminal("python: the Python runtime is still starting", "err");
         return false;
       }
-      return runFile(key, lines, { quiet: true });
+      return runPythonFile(key, lines, { quiet: true });
     },
     runJavaScript: async (key) => runJavaScript(key, { quiet: true }),
     pip: async (packages) => {
@@ -1483,6 +1613,7 @@ function shellHost() {
 function initShell() {
   shell = createShell(shellHost(), {
     mode: settings.shell,
+    username: settings.username,
     history: shellHistory,
     dirs: [...state.dirs],
   });
@@ -2509,7 +2640,7 @@ function runActive() {
   }
   const language = languageFor(state.active);
   if (language === "python") {
-    runFile(state.active, []);
+    return runPythonFile(state.active);
   } else if (language === "javascript") {
     if (state.jsRunning) {
       toast("Already running.");
@@ -2535,16 +2666,28 @@ async function runWithInput() {
     return;
   }
   if (languageFor(state.active) !== "python") {
-    toast("Run with input is only available for Python files.");
+    toast("Standard input is only available for Python files.");
     return;
   }
   if (state.runtime !== "ready") {
     toast("The Python runtime is still starting…");
     return;
   }
-  const lines = await askLines(`Run ${state.active} with input`);
+  const lines = await askLines(`Standard input · ${state.active}`);
   if (lines === null) return;
   runFile(state.active, lines);
+}
+
+async function runPythonFile(name, stdin, options = {}) {
+  if (!state.files.has(name)) return false;
+  snapshotActive();
+  const code = state.files.get(name) ?? "";
+  let lines = stdin;
+  if (lines === undefined || (Array.isArray(lines) && lines.length === 0 && pythonUsesInput(code))) {
+    lines = await askLines(`Input for ${name}`);
+    if (lines === null) return false;
+  }
+  return runFile(name, lines ?? [], options);
 }
 
 async function runFile(name, stdin, options = {}) {
@@ -2832,27 +2975,73 @@ dom.btnExport.addEventListener("click", () => {
  * Run/stop wiring
  * ========================================================================== */
 
+function commitTerminalUsername(value) {
+  if (!saveSessionUsername(value)) return false;
+  saveSettings();
+  applySettings();
+  dom.usernameDialog?.close();
+  dom.promptInput?.focus();
+  return true;
+}
+
+dom.usernameForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const username = normalizeUsername(dom.usernameInput?.value);
+  if (!username) {
+    dom.usernameInput?.setCustomValidity("Choose 1–32 characters: start with a letter or underscore, then use letters, numbers, dots, underscores, or hyphens.");
+    dom.usernameInput?.reportValidity();
+    return;
+  }
+  dom.usernameInput?.setCustomValidity("");
+  commitTerminalUsername(username);
+});
+dom.usernameInput?.addEventListener("input", () => dom.usernameInput?.setCustomValidity(""));
+$("username-guest")?.addEventListener("click", () => commitTerminalUsername(DEFAULT_USERNAME));
+
 dom.btnRun.addEventListener("click", runActive);
 dom.btnSettings?.addEventListener("click", () => {
   syncSettingsForm();
   dom.settingsDialog?.showModal();
 });
+dom.settingsForm?.addEventListener("input", (event) => {
+  const field = event.target.closest('[data-setting="username"]');
+  field?.setCustomValidity("");
+});
 dom.settingsForm?.addEventListener("change", (event) => {
   const field = event.target.closest("[data-setting]");
-  if (!field) return;
+  if (!field || !(field.dataset.setting in DEFAULT_SETTINGS)) return;
   const key = field.dataset.setting;
-  if (field.type === "checkbox") settings[key] = field.checked;
-  else if (field.type === "number") settings[key] = Number(field.value);
-  else settings[key] = field.value;
+  if (key === "username") {
+    const username = normalizeUsername(field.value);
+    if (!username) {
+      field.setCustomValidity("Use 1–32 characters: start with a letter or underscore, then use letters, numbers, dots, underscores, or hyphens.");
+      field.reportValidity();
+      return;
+    }
+    field.setCustomValidity("");
+    saveSessionUsername(username);
+  } else if (field.type === "checkbox") settings[key] = field.checked;
+  else if (field.type === "number") {
+    const entered = Number(field.value);
+    const value = Number.isFinite(entered) ? entered : Number(DEFAULT_SETTINGS[key]);
+    const minimum = field.min === "" ? Number.NEGATIVE_INFINITY : Number(field.min);
+    const maximum = field.max === "" ? Number.POSITIVE_INFINITY : Number(field.max);
+    settings[key] = Math.min(maximum, Math.max(minimum, value));
+    field.value = String(settings[key]);
+  } else settings[key] = field.value;
   saveSettings();
   applySettings();
 });
-dom.settingsForm?.addEventListener("submit", () => {
+dom.settingsForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
   saveSettings();
   applySettings();
+  dom.settingsDialog?.close();
 });
+$("settings-close")?.addEventListener("click", () => dom.settingsDialog?.close());
 $("settings-reset")?.addEventListener("click", () => {
   settings = { ...DEFAULT_SETTINGS };
+  saveSessionUsername(DEFAULT_USERNAME);
   saveSettings();
   applySettings();
   syncSettingsForm();
@@ -3028,7 +3217,7 @@ function quickOpen() {
 
 const PALETTE_COMMANDS = [
   { icon: "▶", label: "Run active file", run: () => runActive() },
-  { icon: "⌨", label: "Run with input…", run: () => runWithInput() },
+  { icon: "⌨", label: "Provide stdin manually…", run: () => runWithInput() },
   { icon: "+", label: "New file", run: () => dom.btnNew.click() },
   { icon: "⚙", label: "Open settings", run: () => dom.btnSettings.click() },
   { icon: "◐", label: "Toggle theme", run: () => { settings.theme = settings.theme === "dark" ? "light" : "dark"; saveSettings(); applySettings(); } },
@@ -3416,6 +3605,10 @@ function boot() {
   dom.runtimeText.textContent = "Python runtime · on demand";
   dom.statusRuntime.textContent = "Python · on demand";
   updateRunButtons();
+  if (shouldAskForUsername && dom.usernameDialog) {
+    dom.usernameDialog.showModal();
+    dom.usernameInput?.focus();
+  }
 }
 
 window.addEventListener("beforeunload", () => {

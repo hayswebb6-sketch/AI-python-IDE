@@ -17,7 +17,7 @@
 
 const DEFAULT_ENV = {
   HOME: "/",
-  USER: "hays",
+  USER: "guest",
   HOSTNAME: "pyide",
   SHELL: "/bin/bash",
   PWD: "/",
@@ -381,6 +381,7 @@ export class Shell {
     this.cwd = "/";
     this.previousCwd = "/";
     this.env = { ...DEFAULT_ENV };
+    this.setUsername(options.username);
     this.aliases = new Map();
     this.history = Array.isArray(options.history) ? options.history.slice(-500) : [];
     this.lastExit = 0;
@@ -389,6 +390,11 @@ export class Shell {
     const savedDirs = typeof host.loadDirs === "function" ? host.loadDirs() : [];
     this.dirs = new Set((savedDirs || []).map((dir) => this.normalize(String(dir))));
     this.setMode(this.mode, { silent: true });
+  }
+
+  setUsername(value) {
+    const username = String(value ?? "").trim();
+    this.env.USER = /^[A-Za-z_][A-Za-z0-9._-]{0,31}$/.test(username) ? username : "guest";
   }
 
   /* -- filesystem ------------------------------------------------------- */
@@ -585,7 +591,7 @@ export class Shell {
 
   promptText() {
     const { path, sigil } = this.promptParts();
-    const user = this.env.USER || "hays";
+    const user = this.env.USER || "guest";
     const hostname = this.env.HOSTNAME || "pyide";
     return this.mode === "pwsh" ? `PS ${path}${sigil}` : `${user}@${hostname}:${path}${sigil}`;
   }
