@@ -1954,9 +1954,7 @@ def _browser_input(prompt=""):
         sys.stdout.flush()
     value = ideBridge.stdin()
     if value is None:
-        raise EOFError(
-            "input() has no data — run the file again and enter one value per line."
-        )
+        raise EOFError("No terminal input is available in this browser context.")
     sys.stdout.write(str(value) + "\n")
     sys.stdout.flush()
     return value

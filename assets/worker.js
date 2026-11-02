@@ -135,7 +135,7 @@ function boot() {
 
       post({ type: "status", state: "loading", message: "Installing browser shims…", progress: 0.8 });
 
-      const shimsUrl = new URL("shims.py", self.location.href);
+      const shimsUrl = new URL("shims.py?v=30", self.location.href);
       const response = await fetch(shimsUrl);
       if (!response.ok) throw new Error(`shims.py → HTTP ${response.status}`);
       await py.runPythonAsync(await response.text());

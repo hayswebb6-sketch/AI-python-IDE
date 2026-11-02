@@ -1978,7 +1978,6 @@ function startWorker() {
   state.worker.addEventListener("message", onWorkerMessage);
   state.worker.addEventListener("error", (event) => {
     const runtimeError = `Runtime error: ${event.message || "unknown"}`;
-    const pipWasInstalling = state.pipInstalling;
     setRuntime("error", "Runtime crashed");
     dbg("worker error", event.message);
     state.worker = null;
