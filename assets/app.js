@@ -9,15 +9,18 @@
  *   - supervising the Python and JavaScript workers
  */
 
-import { registerPythonIntelliSense } from "./completions.js";
-import { createShell } from "./shell.js";
+import { registerPythonIntelliSense } from "./completions.js?v=27";
+import { createShell } from "./shell.js?v=27";
 
 const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
 const STORAGE_KEY = "pyide.workspace.v2";
 const SETTINGS_KEY = "pyide.settings.v1";
+const USERNAME_SESSION_KEY = "pyide.shell.username.session";
 const SHELL_HISTORY_KEY = "pyide.shell.history.v1";
 const SHELL_DIRS_KEY = "pyide.shell.dirs.v1";
 const PYODIDE_VERSION = "0.26.4";
+const DEFAULT_USERNAME = "guest";
+const USERNAME_PATTERN = /^[A-Za-z_][A-Za-z0-9._-]{0,31}$/;
 
 /* ==========================================================================
  * Settings
@@ -35,20 +38,35 @@ const DEFAULT_SETTINGS = {
   parameterHints: true,
   terminalFontSize: 13,
   shell: "bash",
+  username: DEFAULT_USERNAME,
 };
 
 let settings = { ...DEFAULT_SETTINGS };
+let shouldAskForUsername = true;
+
+function normalizeUsername(value) {
+  const username = String(value ?? "").trim();
+  return USERNAME_PATTERN.test(username) ? username : "";
+}
 
 function loadSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null");
     if (saved && typeof saved === "object") {
       for (const key of Object.keys(DEFAULT_SETTINGS)) {
-        if (saved[key] !== undefined) settings[key] = saved[key];
+        if (key !== "username" && saved[key] !== undefined) settings[key] = saved[key];
       }
     }
   } catch {
     /* corrupted settings — fall back to defaults */
+  }
+  try {
+    const sessionUsername = normalizeUsername(sessionStorage.getItem(USERNAME_SESSION_KEY));
+    settings.username = sessionUsername || DEFAULT_USERNAME;
+    shouldAskForUsername = !sessionUsername;
+  } catch {
+    settings.username = DEFAULT_USERNAME;
+    shouldAskForUsername = true;
   }
   settings.theme = settings.theme === "light" ? "light" : "dark";
   settings.shell = settings.shell === "pwsh" ? "pwsh" : "bash";
@@ -59,10 +77,25 @@ function loadSettings() {
 
 function saveSettings() {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    const persistentSettings = { ...settings };
+    delete persistentSettings.username;
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(persistentSettings));
   } catch {
     /* ignore */
   }
+}
+
+function saveSessionUsername(value) {
+  const username = normalizeUsername(value);
+  if (!username) return false;
+  settings.username = username;
+  shouldAskForUsername = false;
+  try {
+    sessionStorage.setItem(USERNAME_SESSION_KEY, username);
+  } catch {
+    /* The username remains available for this page load. */
+  }
+  return true;
 }
 
 /* ==========================================================================
@@ -71,6 +104,10 @@ function saveSettings() {
 
 const TEMPLATES = {
   blank: { name: "script.txt", content: "" },
+  batch: {
+    name: "hello.bat",
+    content: "@echo off\ntitle Batch PC demo\necho Hello, %USERNAME%!\necho Files in this virtual workspace:\ndir\n",
+  },
 };
 
 /* ==========================================================================
@@ -92,7 +129,7 @@ window.__pyideDebug = {
     jsRunning: state.jsRunning,
     files: [...state.files.keys()],
     openTabs: state.openTabs,
-    settings,
+    settings: Object.fromEntries(Object.entries(settings).filter(([key]) => key !== "username")),
     userAgent: navigator.userAgent,
   }),
 };
@@ -148,6 +185,24 @@ const dom = {
   btnStop: $("btn-stop"),
   btnRestart: $("btn-restart"),
   btnSettings: $("btn-settings"),
+  btnBatchPc: $("btn-batch-pc"),
+  batchPcDialog: $("batch-pc-dialog"),
+  batchPcClose: $("batch-pc-close"),
+  batchStop: $("batch-stop"),
+  batchCreateScript: $("batch-pc-create-script"),
+  batchNotepadOpen: $("batch-notepad-open"),
+  batchNotepadFilename: $("batch-notepad-filename"),
+  batchNotepadPreview: $("batch-notepad-preview"),
+  batchCalcDisplay: $("batch-calc-display"),
+  batchCommandForm: $("batch-command-form"),
+  batchCommandInput: $("batch-command-input"),
+  batchPromptLabel: $("batch-prompt-label"),
+  batchOutput: $("batch-output"),
+  batchWindowTitle: $("batch-pc-window-title"),
+  batchFileList: $("batch-file-list"),
+  batchTaskList: $("batch-task-list"),
+  batchStart: $("batch-start"),
+  batchStartMenu: $("batch-start-menu"),
   runMenu: $("run-menu"),
 
   newMenu: $("new-menu"),
@@ -172,6 +227,9 @@ const dom = {
 
   settingsDialog: $("settings-dialog"),
   settingsForm: $("settings-form"),
+  usernameDialog: $("username-dialog"),
+  usernameForm: $("username-form"),
+  usernameInput: $("username-input"),
 
   palette: $("palette"),
   paletteInput: $("palette-input"),
@@ -205,6 +263,11 @@ const state = {
   worker: null,
   jsWorker: null,
   jsRunning: false,
+  batchWorker: null,
+  batchInitialized: false,
+  batchRunning: false,
+  batchRunKind: "",
+  batchCalc: { display: "0", accumulator: null, operator: null, waitingForOperand: false },
   running: false,
   pendingRun: null,
 };
@@ -295,7 +358,7 @@ function announce(message) {
   dom.srLive.textContent = message;
 }
 
-function askText({ title, label, value = "", hint = "", multiline = false, confirm = "OK" }) {
+function askText({ title, label, value = "", hint = "", multiline = false, confirm = "OK", inputType = "text" }) {
   return new Promise((resolve) => {
     dom.dialogTitle.textContent = title;
     dom.dialogLabel.textContent = label;
@@ -307,10 +370,15 @@ function askText({ title, label, value = "", hint = "", multiline = false, confi
     const field = multiline ? dom.dialogTextarea : dom.dialogInput;
     dom.dialogInput.hidden = multiline;
     dom.dialogTextarea.hidden = !multiline;
+    if (!multiline) dom.dialogInput.type = inputType === "password" ? "password" : "text";
     field.value = value;
 
     const finish = (result) => {
       dom.dialog.removeEventListener("close", onClose);
+      if (!multiline) {
+        dom.dialogInput.value = "";
+        dom.dialogInput.type = "text";
+      }
       resolve(result);
     };
     const onClose = () => {
@@ -325,16 +393,78 @@ function askText({ title, label, value = "", hint = "", multiline = false, confi
   });
 }
 
+function pythonUsesInput(source) {
+  const code = String(source ?? "").split("");
+  let quote = "";
+  let triple = false;
+  let escaped = false;
+  let comment = false;
+
+  for (let index = 0; index < code.length; index += 1) {
+    const char = code[index];
+    if (comment) {
+      if (char === "\n") comment = false;
+      else code[index] = " ";
+      continue;
+    }
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        code[index] = char === "\n" ? "\n" : " ";
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        code[index] = " ";
+        continue;
+      }
+      if (triple && char === quote && code[index + 1] === quote && code[index + 2] === quote) {
+        code[index] = code[index + 1] = code[index + 2] = " ";
+        index += 2;
+        quote = "";
+        triple = false;
+        continue;
+      }
+      code[index] = char === "\n" ? "\n" : " ";
+      if (!triple && char === quote) quote = "";
+      continue;
+    }
+    if (char === "#") {
+      comment = true;
+      code[index] = " ";
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      triple = code[index + 1] === char && code[index + 2] === char;
+      code[index] = " ";
+      if (triple) {
+        code[index + 1] = code[index + 2] = " ";
+        index += 2;
+      }
+    }
+  }
+
+  const executable = code.join("");
+  return /\binput\s*\(/.test(executable)
+    || /\bsys\s*\.\s*stdin\b/.test(executable)
+    || /\bstdin\s*\.\s*(?:read|readline|readlines)\s*\(/.test(executable);
+}
+
 async function askLines(title) {
   const value = await askText({
     title,
-    label: "Standard input — one value per line",
+    label: "Program input",
     multiline: true,
-    hint: "Each line is returned by one input() call. Leave empty to run with no input.",
+    hint: "Enter one value per line. Each line is supplied to the next input() call; prompts and output appear in the terminal.",
     confirm: "Run",
   });
   if (value === null) return null;
-  return value.split("\n").filter((line, index, all) => !(index === all.length - 1 && line === ""));
+  const normalized = value.replace(/\r\n?/g, "\n");
+  if (normalized === "") return [];
+  const lines = normalized.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  return lines;
 }
 
 /* ==========================================================================
@@ -374,9 +504,15 @@ const LANGUAGE_DOCS = {
   shell: "https://www.gnu.org/software/bash/manual/",
   powershell: "https://learn.microsoft.com/en-us/powershell/",
   batch: "https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/windows-commands",
+  yaml: "https://yaml.org/spec/1.2.2/",
+  xml: "https://developer.mozilla.org/en-US/docs/Web/XML",
+  php: "https://www.php.net/manual/en/",
+  ruby: "https://docs.ruby-lang.org/en/",
+  toml: "https://toml.io/en/",
   c: "https://en.cppreference.com/w/c",
   cpp: "https://en.cppreference.com/w/cpp",
   java: "https://docs.oracle.com/en/java/",
+  csharp: "https://learn.microsoft.com/en-us/dotnet/csharp/",
   go: "https://go.dev/doc/",
   rust: "https://doc.rust-lang.org/",
   sql: "https://www.sqlite.org/docs.html",
@@ -402,7 +538,6 @@ const LANGUAGE_DOCS = {
   ini: "https://en.wikipedia.org/wiki/INI_file",
   vb: "https://learn.microsoft.com/en-us/dotnet/visual-basic/",
   abap: "https://help.sap.com/docs/abap",
-  typescript: "https://www.typescriptlang.org/docs/",
 };
 const LANGUAGE_DEFS = {
   go: { label: "Go", short: "go", runnable: false },
@@ -434,9 +569,10 @@ const LANGUAGE_DEFS = {
   proto: { label: "Protocol Buffers", short: "proto", runnable: false },
   hcl: { label: "HCL/Terraform", short: "tf", runnable: false },
   ini: { label: "INI/Config", short: "ini", runnable: false },
+  toml: { label: "TOML", short: "toml", runnable: false },
   vb: { label: "Visual Basic", short: "vb", runnable: false },
   abap: { label: "ABAP", short: "abap", runnable: false },
-  batch: { label: "Batch", short: "bat", runnable: false },
+  batch: { label: "Batch", short: "bat", runnable: true },
   c: { label: "C", short: "c", runnable: false },
   cpp: { label: "C++", short: "cpp", runnable: false },
   python: { label: "Python", short: "py", runnable: true },
@@ -450,6 +586,12 @@ const LANGUAGE_DEFS = {
   powershell: { label: "PowerShell", short: "ps1", runnable: false },
   plaintext: { label: "Plain Text", short: "txt", runnable: false },
 };
+
+const MONACO_LANGUAGE_IDS = { batch: "bat" };
+
+function monacoLanguageId(language) {
+  return MONACO_LANGUAGE_IDS[language] || language;
+}
 
 const EXTENSION_LANGUAGE = {
   go: "go",
@@ -485,7 +627,7 @@ const EXTENSION_LANGUAGE = {
   graphql: "graphql", gql: "graphql",
   proto: "proto",
   tf: "hcl", tfvars: "hcl",
-  ini: "ini", toml: "ini", cfg: "ini", conf: "ini",
+  ini: "ini", toml: "toml", cfg: "ini", conf: "ini",
   vb: "vb",
   abap: "abap",
   bat: "batch",
@@ -518,9 +660,6 @@ const EXTENSION_LANGUAGE = {
   txt: "plaintext",
   csv: "plaintext",
   log: "plaintext",
-  yml: "plaintext",
-  yaml: "plaintext",
-  toml: "plaintext",
 };
 
 function languageFor(name) {
@@ -614,7 +753,8 @@ function refreshLanguage() {
   const model = name ? state.models.get(name) : null;
   if (monaco && model && !model.isDisposed()) {
     const language = languageFor(name);
-    if (model.getLanguageId() !== language) monaco.editor.setModelLanguage(model, language);
+    const monacoLanguage = monacoLanguageId(language);
+  if (model.getLanguageId() !== monacoLanguage) monaco.editor.setModelLanguage(model, monacoLanguage);
   }
   updateHtmlPreviewVisibility();
 }
@@ -952,32 +1092,53 @@ const THEME = {
   base: "vs-dark",
   inherit: true,
   rules: [
-    { token: "comment", foreground: "6b7896", fontStyle: "italic" },
-    { token: "keyword", foreground: "c084fc" },
-    { token: "string", foreground: "86efac" },
-    { token: "number", foreground: "fbbf24" },
-    { token: "regexp", foreground: "fca5a5" },
-    { token: "type", foreground: "7dd3fc" },
-    { token: "function", foreground: "93c5fd" },
-    { token: "variable", foreground: "dbe3f4" },
-    { token: "constant", foreground: "f9a8d4" },
-    { token: "delimiter", foreground: "94a3b8" },
+    { token: "comment", foreground: "8996ab", fontStyle: "italic" },
+    { token: "keyword", foreground: "d4a7ff", fontStyle: "bold" },
+    { token: "keyword.control", foreground: "d4a7ff", fontStyle: "bold" },
+    { token: "string", foreground: "a6e3a1" },
+    { token: "string.escape", foreground: "f5c2e7" },
+    { token: "number", foreground: "fab387" },
+    { token: "regexp", foreground: "f38ba8" },
+    { token: "type", foreground: "89dceb" },
+    { token: "type.identifier", foreground: "f9e2af" },
+    { token: "function", foreground: "89b4fa" },
+    { token: "identifier.function", foreground: "89b4fa" },
+    { token: "identifier", foreground: "dbe3f4" },
+    { token: "variable", foreground: "cdd6f4" },
+    { token: "predefined", foreground: "f9a8d4" },
+    { token: "constant", foreground: "f38ba8" },
+    { token: "operator", foreground: "89dceb" },
+    { token: "delimiter", foreground: "a6adc8" },
+    { token: "delimiter.bracket", foreground: "c4b5fd" },
   ],
   colors: {
     "editor.background": "#0c111b",
-    "editor.foreground": "#dbe3f4",
-    "editorLineNumber.foreground": "#2f3b55",
-    "editorLineNumber.activeForeground": "#7c8db3",
+    "editor.foreground": "#e6edf6",
+    "editorLineNumber.foreground": "#56647a",
+    "editorLineNumber.activeForeground": "#a8b7ca",
     "editorCursor.foreground": "#38bdf8",
     "editor.selectionBackground": "#1e3a5f",
     "editor.inactiveSelectionBackground": "#16283f",
-    "editor.lineHighlightBackground": "#101827",
+    "editor.lineHighlightBackground": "#121a27",
     "editorIndentGuide.background1": "#1a2437",
-    "editorIndentGuide.activeBackground1": "#2b3a5e",
-    "editorWidget.background": "#131a2a",
-    "editorWidget.border": "#2b3a5e",
-    "editorSuggestWidget.background": "#131a2a",
-    "editorSuggestWidget.selectedBackground": "#1d2b45",
+    "editorIndentGuide.activeBackground1": "#3a5068",
+    "editorWidget.background": "#121a25",
+    "editorWidget.foreground": "#e6edf6",
+    "editorWidget.border": "#3a5068",
+    "editorHoverWidget.background": "#121a25",
+    "editorHoverWidget.border": "#3a5068",
+    "editorSuggestWidget.background": "#121a25",
+    "editorSuggestWidget.foreground": "#e6edf6",
+    "editorSuggestWidget.border": "#3a5068",
+    "editorSuggestWidget.selectedBackground": "#243247",
+    "editorSuggestWidget.selectedForeground": "#ffffff",
+    "editorSuggestWidget.highlightForeground": "#7dd3fc",
+    "editorBracketHighlight.foreground1": "#89b4fa",
+    "editorBracketHighlight.foreground2": "#cba6f7",
+    "editorBracketHighlight.foreground3": "#a6e3a1",
+    "editorBracketHighlight.foreground4": "#f9e2af",
+    "editorBracketHighlight.foreground5": "#f38ba8",
+    "editorBracketHighlight.foreground6": "#89dceb",
     "scrollbarSlider.background": "#26314980",
     "scrollbarSlider.hoverBackground": "#33415faa",
     "minimap.background": "#0c111b",
@@ -988,16 +1149,24 @@ const LIGHT_THEME = {
   base: "vs",
   inherit: true,
   rules: [
-    { token: "comment", foreground: "8a94a6", fontStyle: "italic" },
-    { token: "keyword", foreground: "7c3aed" },
-    { token: "string", foreground: "15803d" },
+    { token: "comment", foreground: "64748b", fontStyle: "italic" },
+    { token: "keyword", foreground: "6d28d9", fontStyle: "bold" },
+    { token: "keyword.control", foreground: "6d28d9", fontStyle: "bold" },
+    { token: "string", foreground: "166534" },
+    { token: "string.escape", foreground: "be185d" },
     { token: "number", foreground: "b45309" },
     { token: "regexp", foreground: "be123c" },
     { token: "type", foreground: "0369a1" },
+    { token: "type.identifier", foreground: "92400e" },
     { token: "function", foreground: "1d4ed8" },
+    { token: "identifier.function", foreground: "1d4ed8" },
+    { token: "identifier", foreground: "1e293b" },
     { token: "variable", foreground: "1e293b" },
-    { token: "constant", foreground: "be185d" },
-    { token: "delimiter", foreground: "64748b" },
+    { token: "predefined", foreground: "be185d" },
+    { token: "constant", foreground: "9d174d" },
+    { token: "operator", foreground: "0369a1" },
+    { token: "delimiter", foreground: "475569" },
+    { token: "delimiter.bracket", foreground: "7c3aed" },
   ],
   colors: {
     "editor.background": "#ffffff",
@@ -1074,7 +1243,7 @@ function ensureModel(name) {
 
   model = monaco.editor.createModel(
     state.files.get(name) ?? "",
-    languageFor(name),
+    monacoLanguageId(languageFor(name)),
     monaco.Uri.parse(`file:///workspace/${name.split("/").map(encodeURIComponent).join("/")}`)
   );
   state.models.set(name, model);
@@ -1143,7 +1312,9 @@ async function initEditor() {
       wordWrap: settings.wordWrap ? "on" : "off",
       lineNumbers: settings.lineNumbers ? "on" : "off",
       quickSuggestions: settings.quickSuggestions,
-      suggestOnTriggerCharacters: true,
+      quickSuggestionsDelay: 90,
+      suggestOnTriggerCharacters: settings.quickSuggestions,
+      suggestSelection: "first",
       parameterHints: { enabled: settings.parameterHints },
       bracketPairColorization: { enabled: true },
       guides: { bracketPairs: true, indentation: true },
@@ -1217,6 +1388,7 @@ function applySettings() {
   if (shell) {
     const nextMode = settings.shell === "pwsh" ? "pwsh" : "bash";
     if (shell.mode !== nextMode) shell.setMode(nextMode, { silent: true });
+    shell.setUsername(settings.username);
     refreshPrompt();
   }
 
@@ -1455,9 +1627,12 @@ function shellHost() {
         writeTerminal("python: the Python runtime is still starting", "err");
         return false;
       }
-      return runFile(key, lines, { quiet: true });
+      return runPythonFile(key, lines, { quiet: true });
     },
     runJavaScript: async (key) => runJavaScript(key, { quiet: true }),
+    runBatch: async (key) => runBatchFile(key),
+    requestText: (options) => askText({ ...options, inputType: "text" }),
+    requestSecret: (options) => askText({ ...options, inputType: "password" }),
     pip: async (packages) => {
       if (state.runtime !== "ready" && state.runtime !== "running") {
         writeTerminal("pip: the Python runtime is still starting", "err");
@@ -1483,6 +1658,7 @@ function shellHost() {
 function initShell() {
   shell = createShell(shellHost(), {
     mode: settings.shell,
+    username: settings.username,
     history: shellHistory,
     dirs: [...state.dirs],
   });
@@ -1605,11 +1781,13 @@ dom.promptForm.addEventListener("click", (event) => {
  * ========================================================================== */
 
 function updateRunButtons() {
-  const running = state.runtime === "running" || state.jsRunning;
+  const running = state.runtime === "running" || state.jsRunning || state.batchRunning;
   const hasActive = Boolean(state.active);
   dom.btnRun.disabled = running || !hasActive;
   dom.btnRunMenu.disabled = running || !hasActive;
   dom.btnStop.disabled = !running;
+  if (dom.batchStop) dom.batchStop.disabled = !state.batchRunning;
+  if (dom.batchCreateScript) dom.batchCreateScript.disabled = state.batchRunning;
 }
 
 function setRuntime(next, text) {
@@ -2502,6 +2680,366 @@ async function runLuaFile(name) {
   worker.postMessage({ type: "run", code });
 }
 
+function appendBatchOutput(text, kind = "stdout") {
+  if (!dom.batchOutput || text === "") return;
+  const line = document.createElement("div");
+  const safeKind = ["command", "stderr", "system", "success"].includes(kind) ? kind : "stdout";
+  line.className = `batch-line batch-line-${safeKind}`;
+  line.textContent = String(text ?? "");
+  dom.batchOutput.append(line);
+  while (dom.batchOutput.children.length > 700) dom.batchOutput.firstElementChild?.remove();
+  dom.batchOutput.scrollTop = dom.batchOutput.scrollHeight;
+}
+
+function batchWorkspaceSnapshot() {
+  snapshotActive();
+  return {
+    files: Object.fromEntries(state.files),
+    dirs: [...state.dirs],
+    username: settings.username || "guest",
+  };
+}
+
+function startBatchWorker() {
+  if (state.batchWorker) return state.batchWorker;
+  try {
+    const worker = new Worker(new URL("./batch-worker.js?v=27", import.meta.url));
+    state.batchWorker = worker;
+    state.batchInitialized = false;
+    worker.addEventListener("message", handleBatchWorkerMessage);
+    worker.addEventListener("error", (event) => {
+      state.batchRunning = false;
+      state.batchWorker?.terminate();
+      state.batchWorker = null;
+      state.batchInitialized = false;
+      state.batchRunKind = "";
+      appendBatchOutput(`Batch PC stopped: ${event.message || "worker error"}\n`, "stderr");
+      updateRunButtons();
+    });
+    worker.postMessage({ type: "init", ...batchWorkspaceSnapshot() });
+    return worker;
+  } catch (error) {
+    appendBatchOutput(`Batch PC could not start: ${error.message}\n`, "stderr");
+    toast("Batch PC could not start.", "error");
+    return null;
+  }
+}
+
+function syncBatchWorker() {
+  if (!state.batchWorker) return startBatchWorker();
+  state.batchWorker.postMessage({ type: "sync", ...batchWorkspaceSnapshot() });
+  return state.batchWorker;
+}
+
+function openBatchPC(app = "cmd") {
+  if (!dom.batchPcDialog) return;
+  snapshotActive();
+  if (!dom.batchPcDialog.open) dom.batchPcDialog.showModal();
+  openBatchApp(app);
+  if (state.batchWorker) syncBatchWorker();
+  else startBatchWorker();
+}
+
+function openBatchApp(app) {
+  const titles = {
+    cmd: "Command Prompt",
+    files: "Files",
+    notepad: "Notepad",
+    tasks: "Task Manager",
+    calc: "Calculator",
+    settings: "About this PC",
+  };
+  if (!titles[app]) return;
+  document.querySelectorAll("[data-batch-view]").forEach((view) => {
+    view.hidden = view.dataset.batchView !== app;
+  });
+  document.querySelectorAll(".batch-desktop-shortcut").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.batchApp === app));
+  });
+  if (dom.batchWindowTitle) dom.batchWindowTitle.textContent = titles[app];
+  $("batch-taskbar-active").textContent = titles[app];
+  if (dom.batchStartMenu) dom.batchStartMenu.hidden = true;
+  dom.batchStart?.setAttribute("aria-expanded", "false");
+
+  if (app === "files") renderBatchFiles();
+  if (app === "tasks") renderBatchTasks();
+  if (app === "calc") renderBatchCalculator();
+  if (app === "notepad") {
+    const name = state.active;
+    dom.batchNotepadFilename.textContent = name || "No file is open";
+    dom.batchNotepadPreview.textContent = name
+      ? state.files.get(name) ?? ""
+      : "Open a file from Files, or create a .bat script to get started.";
+  }
+  if (app === "cmd" && dom.batchPcDialog?.open) {
+  requestAnimationFrame(() => dom.batchCommandInput?.focus({ preventScroll: true }));
+  }
+  if (app === "calc" && dom.batchPcDialog?.open) {
+  requestAnimationFrame(() => document.querySelector('[data-batch-view="calc"] [data-calc-digit]')?.focus({ preventScroll: true }));
+  }
+}
+
+function renderBatchFiles() {
+  if (!dom.batchFileList) return;
+  dom.batchFileList.replaceChildren();
+  const files = [...state.files.keys()].sort((left, right) => left.localeCompare(right));
+  if (!files.length) {
+    const empty = document.createElement("li");
+    empty.className = "batch-empty";
+    empty.textContent = "The virtual workspace is empty.";
+    dom.batchFileList.append(empty);
+    return;
+  }
+  for (const name of files) {
+    const item = document.createElement("li");
+    item.className = "batch-file-row";
+    const filename = document.createElement("span");
+    filename.textContent = name;
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "btn ghost small";
+    openButton.textContent = "Open";
+    openButton.addEventListener("click", () => {
+      dom.batchPcDialog?.close();
+      openFile(name);
+    });
+    item.append(filename, openButton);
+    dom.batchFileList.append(item);
+  }
+}
+
+function createBatchScript() {
+  let suffix = 1;
+  let filename = TEMPLATES.batch.name;
+  while (state.files.has(filename)) {
+    suffix += 1;
+    filename = `hello-${suffix}.bat`;
+  }
+  if (createFile(filename, TEMPLATES.batch.content)) {
+    renderBatchFiles();
+    openBatchApp("notepad");
+  }
+}
+
+function renderBatchCalculator() {
+  if (dom.batchCalcDisplay) dom.batchCalcDisplay.textContent = state.batchCalc.display;
+}
+
+function batchCalculatorResult(left, operator, right) {
+  switch (operator) {
+    case "add": return left + right;
+    case "subtract": return left - right;
+    case "multiply": return left * right;
+    case "divide": return right === 0 ? null : left / right;
+    default: return null;
+  }
+}
+
+function formatBatchCalculatorValue(value) {
+  if (!Number.isFinite(value)) return "Error";
+  return Number(value.toPrecision(12)).toString();
+}
+
+function handleBatchCalculatorButton(button) {
+  const calculator = state.batchCalc;
+  const digit = button.dataset.calcDigit;
+  if (digit !== undefined) {
+    const next = calculator.waitingForOperand || calculator.display === "Error"
+      ? digit === "." ? "0." : digit
+      : digit === "."
+        ? calculator.display.includes(".") ? calculator.display : `${calculator.display}.`
+        : calculator.display === "0" ? digit : `${calculator.display}${digit}`;
+    if (next.length <= 18) calculator.display = next;
+    calculator.waitingForOperand = false;
+    renderBatchCalculator();
+    return;
+  }
+
+  if (button.dataset.calcAction === "clear") {
+    state.batchCalc = { display: "0", accumulator: null, operator: null, waitingForOperand: false };
+    renderBatchCalculator();
+    return;
+  }
+  if (button.dataset.calcAction === "backspace") {
+    if (calculator.waitingForOperand || calculator.display === "Error") {
+      calculator.display = "0";
+      calculator.waitingForOperand = false;
+    } else {
+      calculator.display = calculator.display.length > 1 ? calculator.display.slice(0, -1) : "0";
+      if (calculator.display === "-" || calculator.display === "") calculator.display = "0";
+    }
+    renderBatchCalculator();
+    return;
+  }
+
+  const operation = button.dataset.calcOperation;
+  if (operation) {
+    const current = Number(calculator.display);
+    if (!Number.isFinite(current)) return;
+    if (calculator.operator && calculator.accumulator !== null && !calculator.waitingForOperand) {
+      const result = batchCalculatorResult(calculator.accumulator, calculator.operator, current);
+      calculator.display = result === null ? "Error" : formatBatchCalculatorValue(result);
+      calculator.accumulator = result;
+    } else if (calculator.accumulator === null) {
+      calculator.accumulator = current;
+    }
+    calculator.operator = operation;
+    calculator.waitingForOperand = true;
+    renderBatchCalculator();
+    return;
+  }
+
+  if (button.dataset.calcAction === "equals" && calculator.operator && calculator.accumulator !== null) {
+    const right = calculator.waitingForOperand ? calculator.accumulator : Number(calculator.display);
+    const result = batchCalculatorResult(calculator.accumulator, calculator.operator, right);
+    calculator.display = result === null ? "Error" : formatBatchCalculatorValue(result);
+    calculator.accumulator = result;
+    calculator.operator = null;
+    calculator.waitingForOperand = true;
+    renderBatchCalculator();
+  }
+}
+
+function renderBatchTasks() {
+  if (!dom.batchTaskList) return;
+  dom.batchTaskList.replaceChildren();
+  const activeApp = $("batch-taskbar-active")?.textContent || "Command Prompt";
+  const tasks = [
+    { pid: "100", name: "PyIDE Virtual PC", status: "Running" },
+    { pid: "101", name: activeApp, status: "Open" },
+    { pid: "102", name: "Batch interpreter", status: state.batchRunning ? "Running" : "Idle" },
+  ];
+  for (const task of tasks) {
+    const item = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = `${task.pid} · ${task.name}`;
+    const status = document.createElement("span");
+    status.textContent = task.status;
+    item.append(name, status);
+    dom.batchTaskList.append(item);
+  }
+}
+
+function applyBatchWorkspace(result) {
+  if (result.files && typeof result.files === "object") {
+    const incoming = new Map(Object.entries(result.files).map(([name, content]) => [name, String(content)]));
+    for (const name of [...state.files.keys()]) {
+      if (incoming.has(name)) continue;
+      const current = state.files.get(name) ?? "";
+      const model = state.models.get(name);
+      const editorValue = state.active === name ? model?.getValue() ?? state.editor?.getValue() : current;
+      if (state.active === name && editorValue !== current) continue;
+      shellDeleteFile(name);
+    }
+    for (const [name, content] of incoming) {
+      const current = state.files.get(name);
+      if (current === content) continue;
+      const model = state.models.get(name);
+      const editorValue = state.active === name ? model?.getValue() ?? state.editor?.getValue() : current;
+      if (state.active === name && current !== undefined && editorValue !== current) {
+        state.files.set(name, content);
+        continue;
+      }
+      shellWriteFile(name, content);
+    }
+  }
+  if (Array.isArray(result.dirs)) {
+    state.dirs = new Set(result.dirs.map((dir) => `/${String(dir).replace(/^\/+|\/+$/g, "")}`));
+    if (!state.dirs.size) state.dirs.add("/");
+  }
+  renderBatchFiles();
+  renderBreadcrumbs();
+  scheduleSave();
+}
+
+function handleBatchWorkerMessage({ data = {} }) {
+  if (data.type === "output") {
+    appendBatchOutput(data.text, data.kind);
+    return;
+  }
+  if (data.type === "clear") {
+    dom.batchOutput?.replaceChildren();
+    return;
+  }
+  if (data.type === "input-request") {
+    askText({
+      title: data.title || "Batch input",
+      label: data.label || "Enter a value",
+      hint: data.hint || "This value stays in the virtual PC session.",
+      inputType: data.inputType === "password" ? "password" : "text",
+      confirm: data.confirm || "Enter",
+    }).then((value) => state.batchWorker?.postMessage({ type: "input-response", id: data.id, value }));
+    return;
+  }
+  if (data.type === "launch-app") {
+    openBatchApp(data.app);
+    return;
+  }
+  if (data.type === "ready") state.batchInitialized = true;
+  if (data.prompt && dom.batchPromptLabel) dom.batchPromptLabel.textContent = data.prompt;
+  if (data.title && dom.batchWindowTitle && dom.batchWindowTitle.textContent === "Command Prompt") {
+    dom.batchWindowTitle.textContent = data.title;
+  }
+  if (data.type !== "complete") return;
+
+  applyBatchWorkspace(data);
+  state.batchRunning = false;
+  if (state.batchRunKind === "script") {
+    appendBatchOutput(
+      data.stopped ? "Batch script stopped.\n" : `Batch script finished with exit code ${data.errorlevel ?? 0}.\n`,
+      data.stopped ? "system" : data.errorlevel ? "stderr" : "success"
+    );
+  }
+  state.batchRunKind = "";
+  updateRunButtons();
+  if (document.querySelector('[data-batch-view="tasks"]:not([hidden])')) renderBatchTasks();
+  if (dom.batchPcDialog?.open && !document.querySelector('[data-batch-view="cmd"][hidden]')) {
+    dom.batchCommandInput?.focus({ preventScroll: true });
+  }
+}
+
+function runBatchCommand(line) {
+  const command = String(line || "").trim();
+  if (!command || state.batchRunning) return;
+  const worker = syncBatchWorker();
+  if (!worker) return;
+  const prompt = dom.batchPromptLabel?.textContent || "C:\\workspace>";
+  appendBatchOutput(`${prompt} ${command}\n`, "command");
+  dom.batchCommandInput.value = "";
+  state.batchRunKind = "command";
+  state.batchRunning = true;
+  updateRunButtons();
+  worker.postMessage({ type: "command", line: command });
+}
+
+function runBatchFile(name) {
+  const filename = String(name || "");
+  if (!state.files.has(filename)) {
+    toast(`Batch file not found: ${filename}`, "error");
+    return false;
+  }
+  if (state.batchRunning) {
+    toast("A Batch command is already running.", "error");
+    return false;
+  }
+  openBatchPC("cmd");
+  const worker = state.batchWorker;
+  if (!worker) return false;
+  const code = state.files.get(filename) ?? "";
+  state.snapshots.set(filename, code);
+  renderTabs();
+  state.batchRunKind = "script";
+  state.batchRunning = true;
+  updateRunButtons();
+  worker.postMessage({
+    type: "run",
+    filename,
+    code,
+    ...batchWorkspaceSnapshot(),
+  });
+  return true;
+}
+
 function runActive() {
   if (!state.active) {
     toast("Open a file first.", "error");
@@ -2509,7 +3047,7 @@ function runActive() {
   }
   const language = languageFor(state.active);
   if (language === "python") {
-    runFile(state.active, []);
+    return runPythonFile(state.active);
   } else if (language === "javascript") {
     if (state.jsRunning) {
       toast("Already running.");
@@ -2520,12 +3058,14 @@ function runActive() {
     runLuaFile(state.active);
   } else if (language === "sql") {
     runSqlFile(state.active);
-  } else if (language === "shell" || language === "batch") {
+  } else if (language === "shell") {
     runShellFile(state.active);
+  } else if (language === "batch") {
+    runBatchFile(state.active);
   } else if (language === "html") {
     runHtmlFile(state.active);
   } else {
-    toast(`${languageLabel(language)} files are editing-only — Run supports Python, JavaScript, Shell and HTML preview.`);
+    toast(`${languageLabel(language)} files are editing-only — Run supports Python, JavaScript, Lua, SQL, Shell, Batch, and HTML preview.`);
   }
 }
 
@@ -2535,16 +3075,28 @@ async function runWithInput() {
     return;
   }
   if (languageFor(state.active) !== "python") {
-    toast("Run with input is only available for Python files.");
+    toast("Standard input is only available for Python files.");
     return;
   }
   if (state.runtime !== "ready") {
     toast("The Python runtime is still starting…");
     return;
   }
-  const lines = await askLines(`Run ${state.active} with input`);
+  const lines = await askLines(`Standard input · ${state.active}`);
   if (lines === null) return;
   runFile(state.active, lines);
+}
+
+async function runPythonFile(name, stdin, options = {}) {
+  if (!state.files.has(name)) return false;
+  snapshotActive();
+  const code = state.files.get(name) ?? "";
+  let lines = stdin;
+  if (lines === undefined || (Array.isArray(lines) && lines.length === 0 && pythonUsesInput(code))) {
+    lines = await askLines(`Input for ${name}`);
+    if (lines === null) return false;
+  }
+  return runFile(name, lines ?? [], options);
 }
 
 async function runFile(name, stdin, options = {}) {
@@ -2583,7 +3135,9 @@ async function runShellFile(name) {
   showConsole("terminal");
   writeTerminal(` ${name}`, "cmd");
   for (const line of String(code).split(/\r?\n/)) {
-    if (line.trim()) await shell.execute(line);
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    await shell.execute(line);
   }
   writeTerminal("Shell script finished.", "ok");
 }
@@ -2832,27 +3386,73 @@ dom.btnExport.addEventListener("click", () => {
  * Run/stop wiring
  * ========================================================================== */
 
+function commitTerminalUsername(value) {
+  if (!saveSessionUsername(value)) return false;
+  saveSettings();
+  applySettings();
+  dom.usernameDialog?.close();
+  dom.promptInput?.focus();
+  return true;
+}
+
+dom.usernameForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const username = normalizeUsername(dom.usernameInput?.value);
+  if (!username) {
+    dom.usernameInput?.setCustomValidity("Choose 1–32 characters: start with a letter or underscore, then use letters, numbers, dots, underscores, or hyphens.");
+    dom.usernameInput?.reportValidity();
+    return;
+  }
+  dom.usernameInput?.setCustomValidity("");
+  commitTerminalUsername(username);
+});
+dom.usernameInput?.addEventListener("input", () => dom.usernameInput?.setCustomValidity(""));
+$("username-guest")?.addEventListener("click", () => commitTerminalUsername(DEFAULT_USERNAME));
+
 dom.btnRun.addEventListener("click", runActive);
 dom.btnSettings?.addEventListener("click", () => {
   syncSettingsForm();
   dom.settingsDialog?.showModal();
 });
+dom.settingsForm?.addEventListener("input", (event) => {
+  const field = event.target.closest('[data-setting="username"]');
+  field?.setCustomValidity("");
+});
 dom.settingsForm?.addEventListener("change", (event) => {
   const field = event.target.closest("[data-setting]");
-  if (!field) return;
+  if (!field || !(field.dataset.setting in DEFAULT_SETTINGS)) return;
   const key = field.dataset.setting;
-  if (field.type === "checkbox") settings[key] = field.checked;
-  else if (field.type === "number") settings[key] = Number(field.value);
-  else settings[key] = field.value;
+  if (key === "username") {
+    const username = normalizeUsername(field.value);
+    if (!username) {
+      field.setCustomValidity("Use 1–32 characters: start with a letter or underscore, then use letters, numbers, dots, underscores, or hyphens.");
+      field.reportValidity();
+      return;
+    }
+    field.setCustomValidity("");
+    saveSessionUsername(username);
+  } else if (field.type === "checkbox") settings[key] = field.checked;
+  else if (field.type === "number") {
+    const entered = Number(field.value);
+    const value = Number.isFinite(entered) ? entered : Number(DEFAULT_SETTINGS[key]);
+    const minimum = field.min === "" ? Number.NEGATIVE_INFINITY : Number(field.min);
+    const maximum = field.max === "" ? Number.POSITIVE_INFINITY : Number(field.max);
+    settings[key] = Math.min(maximum, Math.max(minimum, value));
+    field.value = String(settings[key]);
+  } else settings[key] = field.value;
   saveSettings();
   applySettings();
 });
-dom.settingsForm?.addEventListener("submit", () => {
+dom.settingsForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
   saveSettings();
   applySettings();
+  dom.settingsDialog?.close();
 });
+$("settings-close")?.addEventListener("click", () => dom.settingsDialog?.close());
 $("settings-reset")?.addEventListener("click", () => {
   settings = { ...DEFAULT_SETTINGS };
+  saveSessionUsername(DEFAULT_USERNAME);
   saveSettings();
   applySettings();
   syncSettingsForm();
@@ -2886,7 +3486,61 @@ dom.btnDocs?.addEventListener("click", () => {
   if (url) window.open(url, "_blank", "noopener");
   else toast("No documentation link for this language.", "error");
 });
+dom.btnBatchPc?.addEventListener("click", () => openBatchPC("cmd"));
+dom.batchPcClose?.addEventListener("click", () => dom.batchPcDialog?.close());
+dom.batchStart?.addEventListener("click", () => {
+  const expanded = dom.batchStart.getAttribute("aria-expanded") === "true";
+  dom.batchStartMenu.hidden = expanded;
+  dom.batchStart.setAttribute("aria-expanded", String(!expanded));
+});
+dom.batchPcDialog?.addEventListener("click", (event) => {
+  const calculatorButton = event.target.closest("[data-calc-digit], [data-calc-operation], [data-calc-action]");
+  if (calculatorButton) {
+    handleBatchCalculatorButton(calculatorButton);
+    return;
+  }
+  const appButton = event.target.closest("[data-batch-app]");
+  if (appButton) {
+    openBatchApp(appButton.dataset.batchApp);
+    return;
+  }
+  if (!event.target.closest("#batch-start, #batch-start-menu")) {
+    dom.batchStartMenu.hidden = true;
+    dom.batchStart.setAttribute("aria-expanded", "false");
+  }
+});
+dom.batchPcDialog?.addEventListener("close", () => {
+  dom.batchStartMenu.hidden = true;
+  dom.batchStart?.setAttribute("aria-expanded", "false");
+  if (state.batchRunning) state.batchWorker?.postMessage({ type: "stop" });
+});
+dom.batchCommandForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  runBatchCommand(dom.batchCommandInput.value);
+});
+dom.batchStop?.addEventListener("click", () => {
+  if (!state.batchRunning) return;
+  state.batchWorker?.postMessage({ type: "stop" });
+  appendBatchOutput("Stop requested.\n", "system");
+});
+dom.batchCreateScript?.addEventListener("click", createBatchScript);
+dom.batchNotepadOpen?.addEventListener("click", () => {
+  if (!state.active) {
+    toast("Open a file from Files first.");
+    openBatchApp("files");
+    return;
+  }
+  const filename = state.active;
+  dom.batchPcDialog?.close();
+  openFile(filename);
+});
+
 dom.btnStop.addEventListener("click", () => {
+  if (state.batchRunning && state.batchWorker) {
+    state.batchWorker.postMessage({ type: "stop" });
+    appendBatchOutput("Stop requested.\n", "system");
+    return;
+  }
   if (state.jsRunning && state.jsWorker) {
     state.jsWorker.terminate();
     state.jsWorker = null;
@@ -3028,7 +3682,7 @@ function quickOpen() {
 
 const PALETTE_COMMANDS = [
   { icon: "▶", label: "Run active file", run: () => runActive() },
-  { icon: "⌨", label: "Run with input…", run: () => runWithInput() },
+  { icon: "⌨", label: "Provide stdin manually…", run: () => runWithInput() },
   { icon: "+", label: "New file", run: () => dom.btnNew.click() },
   { icon: "⚙", label: "Open settings", run: () => dom.btnSettings.click() },
   { icon: "◐", label: "Toggle theme", run: () => { settings.theme = settings.theme === "dark" ? "light" : "dark"; saveSettings(); applySettings(); } },
@@ -3311,11 +3965,14 @@ const LANGUAGE_COMPLETIONS = {
       { label: "case", insertText: "case ${1} in\n  ${2})\n    ;;\nesac", detail: "case statement" },
     ],
   },
-  bat: {
-    keywords: ["@echo","off","echo","set","if","else","for","do","in","goto","call","exit","pause","rem","cls","cd","dir","copy","del","move","mkdir","rmdir","start","taskkill","ping","timeout"],
+  batch: {
+    keywords: ["@echo","off","echo","set","if","else","for","do","in","goto","call","exit","pause","rem","cls","cd","dir","type","copy","del","erase","move","ren","mkdir","rmdir","start","tasklist","taskkill","ping","ipconfig","systeminfo","title","color","ver","run"],
     snippets: [
-      { label: "if", insertText: "if ${1} (\n  ${2}\n)", detail: "if block" },
-      { label: "for", insertText: "for %%i in (${1}) do (\n  ${2}\n)", detail: "for loop" },
+      { label: "if", insertText: "if exist \"${1:file.txt}\" (\n  ${2:echo Found}\n)", detail: "if exist block" },
+      { label: "for", insertText: "for %%i in (${1:one two three}) do (\n  echo %%i\n)", detail: "for loop" },
+      { label: "forl", insertText: "for /L %%i in (1,1,${1:5}) do echo %%i", detail: "numeric loop" },
+      { label: "setp", insertText: "set /p ${1:answer}=Enter a value: ", detail: "prompt for input" },
+      { label: "seta", insertText: "set /a ${1:count}=0", detail: "integer variable" },
     ],
   },
   html: {
@@ -3349,6 +4006,227 @@ const LANGUAGE_COMPLETIONS = {
       { label: "table", insertText: "| ${1:Col} | ${2:Col} |\n|---|---|\n| ${3} | ${4} |", detail: "table" },
     ],
   },
+  powershell: {
+    keywords: ["param","function","filter","class","enum","using","begin","process","end","if","elseif","else","switch","foreach","for","while","do","try","catch","finally","throw","return","break","continue","Write-Output","Write-Host","Get-ChildItem","Get-Content","Set-Content","New-Item","Remove-Item","Get-Process","Where-Object","ForEach-Object","Get-LocalUser","New-LocalUser"],
+    snippets: [
+      { label: "function", insertText: "function ${1:Verb-Noun} {\n  param(${2})\n  ${3}\n}", detail: "function" },
+      { label: "foreach", insertText: "foreach ($${1:item} in $${2:items}) {\n  ${3}\n}", detail: "foreach loop" },
+      { label: "try", insertText: "try {\n  ${1}\n} catch {\n  ${2}\n} finally {\n  ${3}\n}", detail: "try/catch/finally" },
+    ],
+  },
+  sql: {
+    keywords: ["SELECT","FROM","WHERE","JOIN","LEFT JOIN","RIGHT JOIN","INNER JOIN","GROUP BY","ORDER BY","HAVING","LIMIT","OFFSET","INSERT INTO","VALUES","UPDATE","SET","DELETE FROM","CREATE TABLE","ALTER TABLE","DROP TABLE","WITH","AS","DISTINCT","UNION","CASE","WHEN","THEN","ELSE","END","NULL","PRIMARY KEY","FOREIGN KEY","NOT NULL","AND","OR","IN","BETWEEN","LIKE","COUNT","SUM","AVG","MIN","MAX","ASC","DESC","BEGIN","COMMIT","ROLLBACK"],
+    snippets: [
+      { label: "select", insertText: "SELECT ${1:column}\nFROM ${2:table}\nWHERE ${3:condition};", detail: "SELECT query" },
+      { label: "cte", insertText: "WITH ${1:items} AS (\n  SELECT ${2:column}\n  FROM ${3:table}\n)\nSELECT * FROM ${1:items};", detail: "common table expression" },
+      { label: "create-table", insertText: "CREATE TABLE ${1:table_name} (\n  id INTEGER PRIMARY KEY,\n  ${2:column_name} TEXT NOT NULL\n);", detail: "create table" },
+    ],
+  },
+  lua: {
+    keywords: ["and","break","do","else","elseif","end","false","for","function","goto","if","in","local","nil","not","or","repeat","return","then","true","until","while","pairs","ipairs","print","require","tostring","type","table","math","string","io"],
+    snippets: [
+      { label: "function", insertText: "local function ${1:name}(${2})\n  ${3}\nend", detail: "local function" },
+      { label: "pairs", insertText: "for ${1:key}, ${2:value} in pairs(${3:table}) do\n  ${4}\nend", detail: "pairs loop" },
+      { label: "main", insertText: "local function main()\n  ${1}\nend\n\nmain()", detail: "main function" },
+    ],
+  },
+  php: {
+    keywords: ["abstract","and","array","as","break","callable","case","catch","class","clone","const","continue","declare","default","do","echo","else","elseif","empty","endfor","endforeach","endif","endswitch","endwhile","enum","extends","false","final","finally","fn","for","foreach","function","global","if","implements","include","instanceof","interface","match","namespace","new","null","or","private","protected","public","readonly","require","return","static","switch","throw","trait","true","try","use","var","while","yield"],
+    snippets: [
+      { label: "php", insertText: "<?php\n${1}\n", detail: "PHP opening tag" },
+      { label: "function", insertText: "function ${1:name}(${2}) {\n  ${3}\n}", detail: "function" },
+      { label: "foreach", insertText: "foreach (${1:$items} as ${2:$item}) {\n  ${3}\n}", detail: "foreach loop" },
+    ],
+  },
+  ruby: {
+    keywords: ["alias","and","begin","break","case","class","def","defined?","do","else","elsif","end","ensure","false","for","if","in","module","next","nil","not","or","redo","rescue","retry","return","self","super","then","true","undef","unless","until","when","while","yield","puts","require"],
+    snippets: [
+      { label: "def", insertText: "def ${1:name}(${2})\n  ${3}\nend", detail: "method" },
+      { label: "class", insertText: "class ${1:Name}\n  def initialize(${2})\n    ${3}\n  end\nend", detail: "class" },
+      { label: "each", insertText: "${1:items}.each do |${2:item}|\n  ${3}\nend", detail: "each block" },
+    ],
+  },
+  csharp: {
+    keywords: ["abstract","as","async","await","base","bool","break","byte","case","catch","char","class","const","continue","decimal","delegate","do","double","else","enum","event","explicit","extern","false","finally","float","for","foreach","if","implicit","in","int","interface","internal","is","lock","namespace","new","null","object","operator","out","override","params","private","protected","public","readonly","ref","return","sealed","static","string","struct","switch","this","throw","true","try","using","var","virtual","void","while","Console.WriteLine"],
+    snippets: [
+      { label: "main", insertText: "static void Main(string[] args)\n{\n  ${1}\n}", detail: "main method" },
+      { label: "cw", insertText: "Console.WriteLine(${1});", detail: "write line" },
+      { label: "class", insertText: "public class ${1:Name}\n{\n  ${2}\n}", detail: "class" },
+    ],
+  },
+  yaml: {
+    keywords: ["true","false","null","yes","no","on","off"],
+    snippets: [
+      { label: "list", insertText: "- ${1:item}\n- ${2:item}", detail: "YAML list" },
+      { label: "mapping", insertText: "${1:key}:\n  ${2:property}: ${3:value}", detail: "nested mapping" },
+    ],
+  },
+  xml: {
+    keywords: ["xml version","encoding","xmlns","xmlns:xsi","xsi:schemaLocation"],
+    snippets: [
+      { label: "xml", insertText: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<${1:root}>\n  ${2}\n</${1:root}>", detail: "XML document" },
+      { label: "element", insertText: "<${1:element}>${2}</${1:element}>", detail: "element" },
+    ],
+  },
+  swift: {
+    keywords: ["associatedtype","class","deinit","enum","extension","fileprivate","func","import","init","inout","internal","let","open","operator","private","protocol","public","rethrows","static","struct","subscript","typealias","var","where","while","guard","defer","if","else","for","in","return","throw","try","await","async","print"],
+    snippets: [
+      { label: "func", insertText: "func ${1:name}(${2})${3: -> Void} {\n  ${4}\n}", detail: "function" },
+      { label: "struct", insertText: "struct ${1:Name} {\n  ${2}\n}", detail: "struct" },
+      { label: "guard", insertText: "guard ${1:condition} else {\n  return\n}", detail: "guard statement" },
+    ],
+  },
+  kotlin: {
+    keywords: ["as","break","class","continue","do","else","false","for","fun","if","in","interface","is","null","object","package","return","super","this","throw","true","try","typealias","typeof","val","var","when","while","suspend","data","sealed","override","println"],
+    snippets: [
+      { label: "fun", insertText: "fun ${1:name}(${2}): ${3:Unit} {\n  ${4}\n}", detail: "function" },
+      { label: "data-class", insertText: "data class ${1:Name}(\n  val ${2:field}: ${3:String}\n)", detail: "data class" },
+      { label: "main", insertText: "fun main() {\n  ${1}\n}", detail: "main function" },
+    ],
+  },
+  r: {
+    keywords: ["function","if","else","repeat","while","for","in","next","break","TRUE","FALSE","NULL","NA","NaN","Inf","library","require","data.frame","c","list","print","return","apply","lapply","sapply","ggplot"],
+    snippets: [
+      { label: "function", insertText: "${1:name} <- function(${2}) {\n  ${3}\n}", detail: "function" },
+      { label: "data-frame", insertText: "${1:data} <- data.frame(\n  ${2:column} = ${3:value}\n)", detail: "data frame" },
+      { label: "pipe", insertText: "${1:data} |>\n  ${2:transform}()", detail: "native pipe" },
+    ],
+  },
+  dart: {
+    keywords: ["abstract","as","assert","async","await","break","case","catch","class","const","continue","default","do","else","enum","extends","false","final","finally","for","Function","if","implements","import","in","is","late","library","mixin","new","null","on","part","required","return","sealed","set","static","super","switch","this","throw","true","try","var","void","while","with","yield","print"],
+    snippets: [
+      { label: "main", insertText: "void main() {\n  ${1}\n}", detail: "main function" },
+      { label: "class", insertText: "class ${1:Name} {\n  ${2}\n}", detail: "class" },
+      { label: "async", insertText: "Future<${1:void}> ${2:load}() async {\n  ${3}\n}", detail: "async function" },
+    ],
+  },
+  perl: {
+    keywords: ["my","our","local","state","sub","package","use","require","if","elsif","else","unless","while","until","for","foreach","given","when","return","last","next","redo","die","eval","print","say","undef","strict","warnings"],
+    snippets: [
+      { label: "sub", insertText: "sub ${1:name} {\n  my (${2}) = @_;\n  ${3}\n}", detail: "subroutine" },
+      { label: "foreach", insertText: "foreach my $${1:item} (@${2:items}) {\n  ${3}\n}", detail: "foreach loop" },
+    ],
+  },
+  scala: {
+    keywords: ["abstract","case","catch","class","def","do","else","enum","export","extends","false","final","finally","for","forSome","given","if","implicit","import","lazy","match","new","null","object","override","package","private","protected","return","sealed","super","then","this","throw","trait","true","try","type","val","var","while","yield","println"],
+    snippets: [
+      { label: "object", insertText: "object ${1:Main} {\n  def main(args: Array[String]): Unit = {\n    ${2}\n  }\n}", detail: "main object" },
+      { label: "def", insertText: "def ${1:name}(${2}): ${3:Unit} = {\n  ${4}\n}", detail: "method" },
+    ],
+  },
+  julia: {
+    keywords: ["begin","break","catch","const","continue","do","else","elseif","end","export","false","finally","for","function","global","if","import","let","local","macro","module","mutable","nothing","primitive","quote","return","struct","true","try","using","where","while","println"],
+    snippets: [
+      { label: "function", insertText: "function ${1:name}(${2})\n  ${3}\nend", detail: "function" },
+      { label: "for", insertText: "for ${1:item} in ${2:items}\n  ${3}\nend", detail: "for loop" },
+    ],
+  },
+  fsharp: {
+    keywords: ["abstract","and","as","assert","base","begin","class","default","delegate","do","done","downcast","downto","elif","else","end","exception","extern","false","finally","for","fun","function","global","if","in","inherit","inline","interface","let","match","member","module","mutable","namespace","new","null","of","open","or","override","private","public","rec","return","static","then","to","true","try","type","use","val","void","when","while","with","yield"],
+    snippets: [
+      { label: "let-fn", insertText: "let ${1:name} ${2:args} =\n    ${3}", detail: "function binding" },
+      { label: "match", insertText: "match ${1:value} with\n| ${2:case} -> ${3}\n| _ -> ${4}", detail: "match expression" },
+    ],
+  },
+  clojure: {
+    keywords: ["def","defn","defonce","fn","let","loop","recur","if","when","cond","case","do","quote","var","ns","require","use","map","filter","reduce","println","str","nil","true","false","and","or","not"],
+    snippets: [
+      { label: "defn", insertText: "(defn ${1:name} [${2:args}]\n  ${3})", detail: "function" },
+      { label: "let", insertText: "(let [${1:name} ${2:value}]\n  ${3})", detail: "let binding" },
+    ],
+  },
+  "objective-c": {
+    keywords: ["@interface","@implementation","@end","@property","@synthesize","@autoreleasepool","BOOL","YES","NO","nil","self","super","static","const","void","int","float","double","if","else","for","while","return","NSObject","NSString","NSArray","NSDictionary"],
+    snippets: [
+      { label: "interface", insertText: "@interface ${1:Name} : NSObject\n${2}\n@end", detail: "interface" },
+      { label: "implementation", insertText: "@implementation ${1:Name}\n${2}\n@end", detail: "implementation" },
+    ],
+  },
+  pascal: {
+    keywords: ["and","array","begin","case","const","div","do","downto","else","end","file","for","function","goto","if","implementation","in","interface","mod","nil","not","object","of","or","packed","procedure","program","record","repeat","set","then","to","type","unit","until","uses","var","while","with","write","writeln"],
+    snippets: [
+      { label: "program", insertText: "program ${1:HelloWorld};\n\nbegin\n  ${2}\nend.", detail: "program" },
+      { label: "procedure", insertText: "procedure ${1:Name};\nbegin\n  ${2}\nend;", detail: "procedure" },
+    ],
+  },
+  coffeescript: {
+    keywords: ["and","or","not","is","isnt","if","then","else","unless","until","while","for","in","of","by","when","return","class","extends","super","this","yes","no","on","off","null","undefined","own","new","typeof","instanceof","delete","throw","try","catch","finally"],
+    snippets: [
+      { label: "function", insertText: "${1:name} = (${2}) ->\n  ${3}", detail: "function" },
+      { label: "class", insertText: "class ${1:Name}\n  constructor: (${2}) ->\n    ${3}", detail: "class" },
+    ],
+  },
+  scss: {
+    keywords: ["@use","@forward","@import","@mixin","@include","@extend","@function","@return","@if","@else","@for","@each","@while","@media","@at-root","!default","!important"],
+    snippets: [
+      { label: "mixin", insertText: "@mixin ${1:name}(${2}) {\n  ${3}\n}", detail: "mixin" },
+      { label: "media", insertText: "@media (max-width: ${1:768px}) {\n  ${2}\n}", detail: "media query" },
+    ],
+  },
+  less: {
+    keywords: ["@import","@media","@keyframes","@supports","@font-face","important","when","and","not","or"],
+    snippets: [
+      { label: "mixin", insertText: ".${1:mixin}(@${2:value}) {\n  ${3}\n}", detail: "mixin" },
+      { label: "media", insertText: "@media (max-width: ${1:768px}) {\n  ${2}\n}", detail: "media query" },
+    ],
+  },
+  dockerfile: {
+    keywords: ["FROM","RUN","CMD","LABEL","EXPOSE","ENV","ADD","COPY","ENTRYPOINT","VOLUME","USER","WORKDIR","ARG","ONBUILD","STOPSIGNAL","HEALTHCHECK","SHELL","AS"],
+    snippets: [
+      { label: "node-image", insertText: "FROM node:${1:22}-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci\nCOPY . .\nCMD [\"npm\", \"start\"]", detail: "Node container" },
+      { label: "python-image", insertText: "FROM python:${1:3.12}-slim\nWORKDIR /app\nCOPY . .\nCMD [\"python\", \"main.py\"]", detail: "Python container" },
+    ],
+  },
+  graphql: {
+    keywords: ["query","mutation","subscription","fragment","on","type","interface","union","enum","input","scalar","schema","directive","implements","extend","ID","String","Int","Float","Boolean"],
+    snippets: [
+      { label: "query", insertText: "query ${1:Name} {\n  ${2:field}\n}", detail: "query" },
+      { label: "mutation", insertText: "mutation ${1:Name}($${2:id}: ID!) {\n  ${3:action}(id: $${2:id})\n}", detail: "mutation" },
+      { label: "type", insertText: "type ${1:Name} {\n  id: ID!\n  ${2:field}: ${3:String}\n}", detail: "type definition" },
+    ],
+  },
+  proto: {
+    keywords: ["syntax","package","import","option","message","enum","service","rpc","returns","stream","oneof","repeated","optional","required","map","reserved","extensions","string","bytes","bool","int32","int64","uint32","uint64","double","float"],
+    snippets: [
+      { label: "message", insertText: "message ${1:Name} {\n  ${2:string} ${3:field} = 1;\n}", detail: "message" },
+      { label: "service", insertText: "service ${1:Name} {\n  rpc ${2:Call} (${3:Request}) returns (${4:Response});\n}", detail: "service" },
+    ],
+  },
+  hcl: {
+    keywords: ["resource","data","variable","output","module","provider","terraform","locals","for_each","count","depends_on","lifecycle","dynamic","required_providers","source","version","true","false","null"],
+    snippets: [
+      { label: "resource", insertText: "resource \"${1:aws_instance}\" \"${2:example}\" {\n  ${3}\n}", detail: "resource block" },
+      { label: "variable", insertText: "variable \"${1:name}\" {\n  type    = ${2:string}\n  default = ${3}\n}", detail: "variable block" },
+    ],
+  },
+  ini: {
+    keywords: ["true","false","yes","no","on","off","null"],
+    snippets: [
+      { label: "section", insertText: "[${1:section}]\n${2:key}=${3:value}", detail: "config section" },
+    ],
+  },
+  toml: {
+    keywords: ["true","false","inf","nan"],
+    snippets: [
+      { label: "section", insertText: "[${1:section}]\n${2:key} = ${3:value}", detail: "TOML section" },
+      { label: "array", insertText: "${1:key} = [\n  ${2:value},\n]", detail: "TOML array" },
+      { label: "table-array", insertText: "[[${1:items}]]\n${2:name} = \"${3:value}\"", detail: "array of tables" },
+    ],
+  },
+  vb: {
+    keywords: ["And","As","Boolean","ByRef","ByVal","Call","Case","Catch","Class","Const","Continue","Dim","Do","Each","Else","ElseIf","End","Enum","Event","Exit","False","Finally","For","Function","Get","If","Imports","In","Interface","Loop","Module","Namespace","New","Next","Nothing","Not","Of","Optional","Overrides","Private","Protected","Public","Return","Select","Shared","String","Structure","Sub","Then","Throw","To","Try","True","Using","While","With","WriteLine"],
+    snippets: [
+      { label: "sub", insertText: "Public Sub ${1:Name}()\n  ${2}\nEnd Sub", detail: "subroutine" },
+      { label: "main", insertText: "Module Program\n  Sub Main()\n    ${1}\n  End Sub\nEnd Module", detail: "main module" },
+    ],
+  },
+  abap: {
+    keywords: ["REPORT","DATA","TYPES","CLASS","METHOD","METHODS","FORM","PERFORM","IF","ELSEIF","ELSE","ENDIF","CASE","WHEN","ENDCASE","DO","ENDDO","LOOP","ENDLOOP","SELECT","FROM","WHERE","INTO","TABLE","APPEND","READ TABLE","WRITE","CLEAR","MOVE","CALL FUNCTION","TRY","CATCH","ENDTRY"],
+    snippets: [
+      { label: "report", insertText: "REPORT ${1:z_report}.\n\nWRITE: / '${2:Hello}'.", detail: "report" },
+      { label: "select", insertText: "SELECT ${1:*}\n  FROM ${2:table}\n  INTO TABLE @DATA(${3:result})\n  WHERE ${4:condition}.\nENDSELECT.", detail: "select" },
+    ],
+  },
 };
 
 function registerLanguageCompletions(monaco) {
@@ -3356,8 +4234,8 @@ function registerLanguageCompletions(monaco) {
     const keywords = data.keywords || [];
     const snippets = data.snippets || [];
     if (!keywords.length && !snippets.length) continue;
-    monaco.languages.registerCompletionItemProvider(language, {
-      triggerCharacters: [".", ">", ":", "#", "<", "/"],
+    monaco.languages.registerCompletionItemProvider(monacoLanguageId(language), {
+      triggerCharacters: [".", ">", ":", "#", "<", "/", "$", "%", "@"],
       provideCompletionItems(model, position) {
         const word = model.getWordUntilPosition(position);
         const range = {
@@ -3416,6 +4294,10 @@ function boot() {
   dom.runtimeText.textContent = "Python runtime · on demand";
   dom.statusRuntime.textContent = "Python · on demand";
   updateRunButtons();
+  if (shouldAskForUsername && dom.usernameDialog) {
+    dom.usernameDialog.showModal();
+    dom.usernameInput?.focus();
+  }
 }
 
 window.addEventListener("beforeunload", () => {

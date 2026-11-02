@@ -491,6 +491,33 @@ export const MODULES = {
   bisect: { doc: "Binary search on sorted lists.", members: [["bisect_left", "bisect.bisect_left(a, x)", "Insertion point on the left.", "function"], ["bisect_right", "bisect.bisect_right(a, x)", "Insertion point on the right.", "function"], ["insort", "bisect.insort(a, x)", "Insert while keeping order.", "function"]] },
   sqlite3: { doc: "SQLite database access (in-memory inside the browser).", members: [["connect", "sqlite3.connect(':memory:')", "Open a database.", "function"]] },
   micropip: { doc: "Install pure-Python wheels from PyPI into Pyodide.", members: [["install", "micropip.install('numpy')", "Install a package.", "function"]] },
+  numpy: {
+    doc: "NumPy arrays and numerical computing. Pyodide loads it automatically when imported.",
+    members: [
+      ["array", "numpy.array(values)", "Create an array.", "function"],
+      ["arange", "numpy.arange(start, stop, step)", "Create a range of values.", "function"],
+      ["linspace", "numpy.linspace(start, stop, num=50)", "Create evenly spaced values.", "function"],
+      ["zeros", "numpy.zeros(shape)", "Create an array filled with zeros.", "function"],
+      ["ones", "numpy.ones(shape)", "Create an array filled with ones.", "function"],
+      ["mean", "numpy.mean(values)", "Calculate the arithmetic mean.", "function"],
+      ["sum", "numpy.sum(values)", "Sum array values.", "function"],
+      ["sqrt", "numpy.sqrt(values)", "Calculate square roots.", "function"],
+      ["pi", "numpy.pi", "The constant pi.", "value"],
+      ["random", "numpy.random", "Random number helpers.", "value"],
+    ],
+  },
+  pandas: {
+    doc: "DataFrame and Series tools for working with tabular data. Pyodide loads it automatically when imported.",
+    members: [
+      ["DataFrame", "pandas.DataFrame(data)", "Create a labeled, two-dimensional table.", "class"],
+      ["Series", "pandas.Series(data)", "Create a labeled one-dimensional sequence.", "class"],
+      ["read_csv", "pandas.read_csv(filepath_or_buffer)", "Read CSV data into a DataFrame.", "function"],
+      ["concat", "pandas.concat(objects)", "Combine pandas objects.", "function"],
+      ["merge", "pandas.merge(left, right, on=None)", "Join DataFrames.", "function"],
+      ["to_datetime", "pandas.to_datetime(arg)", "Convert values to datetimes.", "function"],
+      ["isna", "pandas.isna(obj)", "Detect missing values.", "function"],
+    ],
+  },
 };
 
 export const SNIPPETS = [
@@ -564,6 +591,181 @@ function builtinEntry(name) {
   return BUILTINS.find((entry) => entry.label === name) || null;
 }
 
+const PYTHON_RESERVED_NAMES = new Set([
+  ...KEYWORDS.map(([name]) => name),
+  ...BUILTINS.map(({ label }) => label),
+  ...Object.keys(MODULES),
+]);
+const modelSymbolCache = new WeakMap();
+
+function maskPythonLiterals(source) {
+  let masked = "";
+  let quote = null;
+  let quoteSize = 0;
+  let escaped = false;
+  let comment = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (comment) {
+      if (character === "\n") {
+        masked += "\n";
+        comment = false;
+      } else {
+        masked += " ";
+      }
+      continue;
+    }
+
+    if (quote) {
+      if (escaped) {
+        masked += character === "\n" ? "\n" : " ";
+        escaped = false;
+        continue;
+      }
+      if (character === "\\") {
+        masked += " ";
+        escaped = true;
+        continue;
+      }
+      if (quoteSize === 3 && source.startsWith(quote.repeat(3), index)) {
+        masked += "   ";
+        index += 2;
+        quote = null;
+        quoteSize = 0;
+        continue;
+      }
+      if (quoteSize === 1 && character === quote) {
+        masked += " ";
+        quote = null;
+        quoteSize = 0;
+        continue;
+      }
+      masked += character === "\n" ? "\n" : " ";
+      continue;
+    }
+
+    if (character === "#") {
+      masked += " ";
+      comment = true;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      quoteSize = source.startsWith(character.repeat(3), index) ? 3 : 1;
+      masked += " ".repeat(quoteSize);
+      index += quoteSize - 1;
+      continue;
+    }
+    masked += character;
+  }
+
+  return masked;
+}
+
+function readBalancedGroup(source, start, opening, closing) {
+  if (start < 0) return "";
+  let depth = 0;
+  for (let index = start; index < source.length; index += 1) {
+    if (source[index] === opening) depth += 1;
+    else if (source[index] === closing) {
+      depth -= 1;
+      if (depth === 0) return source.slice(start + 1, index);
+    }
+  }
+  return "";
+}
+
+function modelIsInCommentOrString(monaco, model, position) {
+  const standardTokenType = monaco.languages.StandardTokenType;
+  const tokens = model.getLineTokens?.(position.lineNumber);
+  if (!standardTokenType || !tokens?.findTokenIndexAtOffset || !tokens?.getStandardTokenType) return false;
+
+  const tokenIndex = tokens.findTokenIndexAtOffset(Math.max(0, position.column - 2));
+  const tokenType = tokens.getStandardTokenType(tokenIndex);
+  return tokenType === standardTokenType.Comment || tokenType === standardTokenType.String;
+}
+
+function symbolsForModel(model) {
+  const versionId = model.getVersionId?.();
+  const cached = modelSymbolCache.get(model);
+  if (versionId !== undefined && cached?.versionId === versionId) return cached.symbols;
+
+  const symbols = collectPythonSymbols(model.getValue());
+  if (versionId !== undefined) modelSymbolCache.set(model, { versionId, symbols });
+  return symbols;
+}
+
+export function collectPythonSymbols(source) {
+  const lines = maskPythonLiterals(String(source ?? "")).split(/\r?\n/);
+  const symbols = new Map();
+  const ranks = { variable: 1, parameter: 2, module: 3, function: 4, class: 5 };
+
+  const add = (name, kind, detail, signature = "") => {
+    if (!/^[A-Za-z_]\w*$/.test(name) || PYTHON_RESERVED_NAMES.has(name)) return;
+    const existing = symbols.get(name);
+    if (existing && ranks[existing.kind] >= ranks[kind]) return;
+    symbols.set(name, { label: name, kind, detail, signature, doc: detail });
+  };
+
+  const addTargetNames = (target, detail) => {
+    const names = target.split(":", 1)[0].match(/[A-Za-z_]\w*/g) || [];
+    for (const name of names) add(name, "variable", detail);
+  };
+
+  for (const line of lines) {
+    const definition = /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/.exec(line);
+    if (definition) {
+      const opening = line.indexOf("(", definition.index);
+      const parameters = readBalancedGroup(line, opening, "(", ")");
+      const parameterNames = [];
+      for (const parameter of splitParams(parameters)) {
+        const name = parameter.trim().replace(/^\*{1,2}/, "").split(/[=:]/, 1)[0].trim();
+        if (/^[A-Za-z_]\w*$/.test(name)) {
+          parameterNames.push(name);
+          add(name, "parameter", `Parameter of ${definition[1]}`);
+        }
+      }
+      add(definition[1], "function", "Function defined in this file", `${definition[1]}(${parameterNames.join(", ")})`);
+    }
+
+    const classDefinition = /^\s*class\s+([A-Za-z_]\w*)/.exec(line);
+    if (classDefinition) add(classDefinition[1], "class", "Class defined in this file");
+
+    const importStatement = /^\s*import\s+(.+)$/.exec(line);
+    if (importStatement) {
+      for (const item of splitParams(importStatement[1])) {
+        const match = /^\s*([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:\s+as\s+([A-Za-z_]\w*))?/.exec(item);
+        if (match) add(match[2] || match[1].split(".")[0], "module", "Imported module");
+      }
+      continue;
+    }
+
+    const fromImport = /^\s*from\s+[.\w]+\s+import\s+(.+)$/.exec(line);
+    if (fromImport) {
+      for (const item of splitParams(fromImport[1].replace(/[()]/g, " "))) {
+        const match = /^\s*([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?/.exec(item);
+        if (match) add(match[2] || match[1], "variable", "Imported name");
+      }
+      continue;
+    }
+
+    const loop = /^\s*(?:async\s+)?for\s+(.+?)\s+in\b/.exec(line);
+    if (loop) addTargetNames(loop[1], "Loop variable");
+
+    const alias = /\bas\s+([A-Za-z_]\w*)/g;
+    for (const match of line.matchAll(alias)) add(match[1], "variable", "Local alias");
+
+    const declaration = /^\s*(?:global|nonlocal)\s+(.+)$/.exec(line);
+    if (declaration) addTargetNames(declaration[1], "Declared name");
+
+    const assignment = /^\s*((?:[A-Za-z_]\w*\s*,\s*)*[A-Za-z_]\w*)\s*(?::[^=\n]+)?(?:\*\*=|\/\/=|>>=|<<=|\+=|-=|\*=|\/=|%=|&=|\|=|\^=|=(?!=))/.exec(line);
+    if (assignment) addTargetNames(assignment[1], "Variable in this file");
+  }
+
+  return [...symbols.values()];
+}
+
 export function lookupSymbol(dotted) {
   const [head, member] = String(dotted).split(".");
   if (member) {
@@ -583,7 +785,7 @@ export function lookupSymbol(dotted) {
 /** Infer ``receiver -> type`` from simple assignments in the buffer. */
 function inferVariables(source) {
   const types = new Map();
-  const assignment = /^[ \t]*([A-Za-z_]\w*)\s*=\s*([^\n#]+)/gm;
+  const assignment = /^[ \t]*([A-Za-z_]\w*)\s*(?::[^=\n]+)?\s*=\s*([^\n#]+)/gm;
   let match;
   while ((match = assignment.exec(source))) {
     const [, name, rhs] = match;
@@ -592,10 +794,10 @@ function inferVariables(source) {
     else if (/(?:tkinter|tk)\.(?:Tk|Toplevel)\s*\(/.test(text)) types.set(name, "tk");
     else if (/(?:tkinter|tk)\.(?:Frame|Label|Button|Entry|Text|Canvas|Listbox|Scale|Checkbutton|Radiobutton)\s*\(/.test(text)) types.set(name, "tk");
     else if (/pygame\.Surface\s*\(/.test(text)) types.set(name, "pygame");
-    else if (/^\s*["']/.test(text)) types.set(name, "str");
-    else if (/^\s*\[/.test(text)) types.set(name, "list");
-    else if (/^\s*\{[^}]*:/.test(text)) types.set(name, "dict");
-    else if (/^\s*\{/.test(text)) types.set(name, "set");
+    else if (/^(?:[rubf]{0,2})["']/i.test(text)) types.set(name, "str");
+    else if (/^(?:list)\s*\(/.test(text) || /^\s*\[/.test(text)) types.set(name, "list");
+    else if (/^(?:dict)\s*\(/.test(text) || /^\s*\{\s*\}/.test(text) || /^\s*\{[^}]*:/.test(text)) types.set(name, "dict");
+    else if (/^(?:set)\s*\(/.test(text) || /^\s*\{/.test(text)) types.set(name, "set");
     else if (/^\s*\(/.test(text)) types.set(name, "list");
   }
   return types;
@@ -608,9 +810,21 @@ function toSuggestion(monaco, range, entry, kindOverride) {
       ? monaco.languages.CompletionItemKind.Class
       : kindName === "value"
         ? monaco.languages.CompletionItemKind.Constant
-        : kindName === "module"
-          ? monaco.languages.CompletionItemKind.Module
-          : monaco.languages.CompletionItemKind.Function;
+        : kindName === "variable" || kindName === "parameter"
+          ? monaco.languages.CompletionItemKind.Variable
+          : kindName === "module"
+            ? monaco.languages.CompletionItemKind.Module
+            : monaco.languages.CompletionItemKind.Function;
+  const sortPriority =
+    kindName === "variable" || kindName === "parameter"
+      ? "0"
+      : kindName === "function"
+        ? "1"
+        : kindName === "class"
+          ? "2"
+          : kindName === "module"
+            ? "5"
+            : "3";
 
   return {
     label: entry.label,
@@ -621,7 +835,7 @@ function toSuggestion(monaco, range, entry, kindOverride) {
     insertTextRules: entry.insertText
       ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
       : undefined,
-    sortText: `${kindName === "function" ? "1" : kindName === "class" ? "2" : "3"}${entry.label}`,
+    sortText: `${sortPriority}${entry.label}`,
     range,
   };
 }
@@ -640,7 +854,7 @@ export function registerPythonIntelliSense(monaco) {
   const K = monaco.languages.CompletionItemKind;
 
   monaco.languages.registerCompletionItemProvider("python", {
-    triggerCharacters: [".", "$"],
+    triggerCharacters: Array.from("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_.$"),
     provideCompletionItems(model, position) {
       const word = model.getWordUntilPosition(position);
       const range = {
@@ -649,7 +863,10 @@ export function registerPythonIntelliSense(monaco) {
         startColumn: word.startColumn,
         endColumn: word.endColumn,
       };
+      if (modelIsInCommentOrString(monaco, model, position)) return { suggestions: [] };
 
+      const prefix = word.word.toLowerCase();
+      const matchesPrefix = (label) => label.toLowerCase().startsWith(prefix);
       const line = model.getLineContent(position.lineNumber);
       const before = line.slice(0, position.column - 1);
       const memberMatch = /([A-Za-z_]\w*)\s*\.\s*[A-Za-z_]*$/.exec(before);
@@ -672,6 +889,7 @@ export function registerPythonIntelliSense(monaco) {
       const suggestions = [];
 
       for (const [label, doc] of KEYWORDS) {
+        if (!matchesPrefix(label)) continue;
         suggestions.push({
           label,
           kind: K.Keyword,
@@ -684,10 +902,11 @@ export function registerPythonIntelliSense(monaco) {
       }
 
       for (const entry of BUILTINS) {
-        suggestions.push(toSuggestion(monaco, range, entry));
+        if (matchesPrefix(entry.label)) suggestions.push(toSuggestion(monaco, range, entry));
       }
 
       for (const [name, meta] of Object.entries(MODULES)) {
+        if (!matchesPrefix(name)) continue;
         suggestions.push({
           label: name,
           kind: K.Module,
@@ -700,6 +919,7 @@ export function registerPythonIntelliSense(monaco) {
       }
 
       for (const snippet of SNIPPETS) {
+        if (!matchesPrefix(snippet.label)) continue;
         suggestions.push({
           label: snippet.label,
           kind: K.Snippet,
@@ -709,6 +929,10 @@ export function registerPythonIntelliSense(monaco) {
           sortText: `6${snippet.label}`,
           range,
         });
+      }
+
+      for (const entry of symbolsForModel(model)) {
+        if (matchesPrefix(entry.label)) suggestions.push(toSuggestion(monaco, range, entry));
       }
 
       return { suggestions };

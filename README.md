@@ -12,6 +12,7 @@ This is not a full server-backed IDE. There is no backend, no database, and no b
 - Python execution via Pyodide / WebAssembly
 - JavaScript execution in an isolated iframe sandbox
 - Shell-style terminal emulation with command history and prompt interactions
+- A per-tab terminal username prompt; the alias stays in session storage and is never sent to a server
 - Canvas output for turtle / pygame-style drawing
 - Tk-inspired widget rendering in a Window panel
 - Workspace persistence in localStorage

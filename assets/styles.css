@@ -240,6 +240,8 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover { background: #94a3b8;
 .dialog-textarea { min-height: 120px; resize: vertical; }
 .dialog-hint { font-size: 12px; color: var(--text-faint); margin: 0; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.username-dialog { width: min(440px, 92vw); }
+.username-dialog .dialog-actions { justify-content: space-between; }
 
 .toasts { position: fixed; bottom: 40px; right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 100; }
 .toast { padding: 10px 14px; border-radius: var(--radius-sm); background: var(--panel-2); border: 1px solid var(--border-strong); font-size: 13px; box-shadow: var(--shadow-lg); }
@@ -325,6 +327,108 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover { background: #94a3b8;
 }
 
 .dialog .palette-list { max-height: 320px; }
+
+.settings-dialog {
+  width: min(700px, 92vw);
+  max-height: 90vh;
+  overflow: hidden;
+}
+.settings-form {
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.settings-eyebrow {
+  margin: 0 0 4px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.settings-description {
+  margin: 6px 0 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.settings-group {
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.settings-group legend {
+  padding: 0 6px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.settings-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+}
+.settings-control-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-control-title { font-size: 12px; font-weight: 600; }
+.settings-control-hint { color: var(--text-faint); font-size: 10px; }
+.settings-control select,
+.settings-control input[type="number"],
+.settings-control input[type="text"] {
+  width: 112px;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+}
+.settings-control input[type="text"] {
+  width: min(168px, 46%);
+  font-family: var(--mono);
+}
+.settings-control input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0 4px;
+  accent-color: var(--accent);
+}
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 640px) {
+  .settings-dialog { width: 94vw; max-height: 90dvh; }
+  .settings-form { max-height: 90dvh; padding: 16px; }
+  .settings-grid { grid-template-columns: 1fr; }
+  .settings-control select,
+  .settings-control input[type="number"] { width: 108px; }
+}
 
 .editor-loading-spinner {
   width: 22px;
@@ -484,4 +588,408 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover { background: #94a3b8;
   .sidebar {
     transition: none;
   }
+}
+
+.batch-pc-dialog {
+  width: min(1180px, 96vw);
+  height: min(760px, 92dvh);
+  max-width: 96vw;
+  max-height: 94dvh;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+}
+
+.batch-pc-dialog::backdrop {
+  background: rgba(3, 8, 15, .74);
+  backdrop-filter: blur(4px);
+}
+
+.batch-pc-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.batch-pc {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.batch-pc-header,
+.batch-pc-windowbar,
+.batch-taskbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.batch-pc-header {
+  min-height: 64px;
+  padding: 10px 16px;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.batch-pc-brand,
+.batch-pc-header-actions,
+.batch-app-heading,
+.batch-about-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.batch-pc-brand h2,
+.batch-app-heading h3,
+.batch-about-card h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.batch-pc-brand p,
+.batch-app-heading p,
+.batch-about-card p {
+  margin: 2px 0 0;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.batch-pc-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 700 12px var(--mono);
+}
+
+.batch-pc-header-actions { flex: 0 0 auto; }
+.batch-pc-sandbox,
+.batch-window-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  color: var(--text-dim);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.batch-pc-screen {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: 126px minmax(0, 1fr);
+  background: radial-gradient(ellipse at 70% 15%, rgba(56,189,248,.14), transparent 48%), linear-gradient(140deg, #0b1521, #102a39 55%, #141b30);
+}
+
+.batch-desktop-shortcuts {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px 8px;
+  overflow: auto;
+  border-right: 1px solid rgba(255,255,255,.08);
+  background: rgba(5, 11, 18, .3);
+}
+
+.batch-desktop-shortcut {
+  display: flex;
+  min-height: 72px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 4px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #e6edf6;
+  font-size: 10px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.batch-desktop-shortcut:hover,
+.batch-desktop-shortcut[aria-pressed="true"] {
+  border-color: rgba(125, 211, 252, .35);
+  background: rgba(56, 189, 248, .12);
+}
+
+.batch-shortcut-glyph {
+  display: grid;
+  width: 35px;
+  height: 35px;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 9px;
+  background: linear-gradient(145deg, rgba(56,189,248,.28), rgba(167,139,250,.2));
+  color: #f0f7ff;
+  font: 700 9px var(--mono);
+  letter-spacing: -.04em;
+}
+
+.batch-glyph-files { background: linear-gradient(145deg, rgba(251,191,36,.28), rgba(56,189,248,.16)); }
+.batch-glyph-notepad { background: linear-gradient(145deg, rgba(52,211,153,.26), rgba(56,189,248,.16)); }
+.batch-glyph-tasks { background: linear-gradient(145deg, rgba(167,139,250,.28), rgba(56,189,248,.16)); }
+.batch-glyph-settings { background: linear-gradient(145deg, rgba(148,163,184,.3), rgba(56,189,248,.16)); }
+
+.batch-pc-app-area {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 18px;
+}
+
+.batch-pc-window {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(210, 228, 245, .2);
+  border-radius: 11px;
+  background: var(--bg-soft);
+  box-shadow: 0 18px 46px rgba(0,0,0,.26);
+}
+
+.batch-pc-windowbar {
+  min-height: 38px;
+  padding: 0 12px;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.batch-window-status { padding: 3px 7px; font: 9px var(--mono); }
+.batch-window-status span { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+.batch-app-view {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--bg-soft);
+}
+
+.batch-cmd-view { padding: 0 12px 10px; }
+.batch-output {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 2px 10px;
+  color: var(--text-dim);
+  font: 12px/1.6 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.batch-line-command { color: var(--green); }
+.batch-line-stderr { color: var(--red); }
+.batch-line-system { color: var(--accent); }
+.batch-line-success { color: var(--green); }
+
+.batch-command-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font: 12px var(--mono);
+}
+
+.batch-command-form label { color: var(--accent); white-space: nowrap; }
+.batch-command-form input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.batch-command-form input:focus-visible { box-shadow: 0 1px 0 var(--accent); }
+
+.batch-app-heading {
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.batch-file-list,
+.batch-task-list {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 12px 16px;
+  overflow: auto;
+  list-style: none;
+}
+.batch-file-row,
+.batch-task-row {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.batch-file-row span,
+.batch-task-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch-file-row button { flex: 0 0 auto; }
+.batch-empty { margin: auto; padding: 24px; color: var(--text-faint); font-size: 12px; text-align: center; }
+
+.batch-notepad-preview {
+  margin: 14px 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text-faint);
+  font: 11px/1.6 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.batch-glyph-calc { background: rgba(34,197,94,.12); color: #bbf7d0; }
+.batch-calc-view:not([hidden]) { display: grid; place-items: center; padding: 14px; overflow: auto; }
+.batch-calculator { display: grid; width: min(100%, 360px); gap: 12px; margin: auto; }
+.batch-calculator .batch-app-heading { margin: 0; }
+.batch-calculator-display {
+  display: block;
+  min-height: 62px;
+  padding: 12px 14px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  font: 26px/1.35 var(--mono);
+  text-align: right;
+}
+.batch-calculator-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+.batch-calculator-grid button {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text-dim);
+  font: 14px var(--mono);
+  cursor: pointer;
+}
+.batch-calculator-grid button:hover { border-color: var(--accent); color: var(--text); }
+.batch-calculator-grid button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.batch-calculator-grid .batch-calculator-equals { grid-row: span 2; background: var(--accent); color: #07131b; }
+.batch-calculator-grid .batch-calculator-zero { grid-column: span 2; }
+
+.batch-about-card {
+  align-items: flex-start;
+  margin: 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.batch-system-details { display: grid; gap: 0; margin: 0 18px; border-top: 1px solid var(--border); }
+.batch-system-details div { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+.batch-system-details dt { color: var(--text-faint); }
+.batch-system-details dd { margin: 0; color: var(--text-dim); text-align: right; }
+
+.batch-taskbar {
+  position: relative;
+  min-height: 42px;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 4px 10px;
+  border-top: 1px solid rgba(255,255,255,.1);
+  background: rgba(9, 15, 24, .96);
+}
+.batch-start {
+  padding: 5px 12px;
+  border: 1px solid rgba(125,211,252,.25);
+  border-radius: 7px;
+  background: rgba(56,189,248,.13);
+  color: #d9f3ff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.batch-start:hover,
+.batch-start[aria-expanded="true"] { background: rgba(56,189,248,.22); }
+.batch-taskbar-active { color: #e6edf6; font-size: 10px; }
+.batch-taskbar-note { margin-left: auto; color: #94a3b8; font: 9px var(--mono); }
+.batch-start-menu {
+  position: absolute;
+  z-index: 2;
+  bottom: calc(100% + 6px);
+  left: 10px;
+  display: grid;
+  width: 220px;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
+.batch-start-menu[hidden] { display: none; }
+.batch-start-heading { margin: 2px 6px 6px; color: var(--text-faint); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.batch-start-menu button {
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: 11px;
+  cursor: pointer;
+}
+.batch-start-menu button:hover { background: var(--panel-2); }
+
+@media (max-width: 640px) {
+  .batch-pc-dialog { width: 96vw; height: 92dvh; max-height: 94dvh; }
+  .batch-pc-header { min-height: 56px; padding: 8px 10px; }
+  .batch-pc-brand { gap: 8px; }
+  .batch-pc-brand p { max-width: 52vw; font-size: 9px; }
+  .batch-pc-mark { width: 32px; height: 32px; }
+  .batch-pc-sandbox { display: none; }
+  .batch-pc-screen { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .batch-desktop-shortcuts { flex-direction: row; gap: 4px; padding: 6px; overflow-x: auto; border-right: 0; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .batch-desktop-shortcut { min-width: 68px; min-height: 52px; padding: 3px; font-size: 9px; }
+  .batch-shortcut-glyph { width: 25px; height: 25px; border-radius: 6px; font-size: 8px; }
+  .batch-pc-app-area { padding: 8px; }
+  .batch-pc-windowbar { min-height: 33px; padding-inline: 9px; }
+  .batch-cmd-view { padding-inline: 8px; }
+  .batch-output { font-size: 10px; }
+  .batch-command-form { gap: 5px; font-size: 10px; }
+  .batch-command-form .btn { padding-inline: 8px; }
+  .batch-taskbar-note { display: none; }
+  .batch-start-menu { width: min(220px, calc(100vw - 28px)); }
+  .batch-app-heading { align-items: flex-start; gap: 8px; padding: 11px; }
+  .batch-app-heading p { max-width: 56vw; }
+  .batch-file-list, .batch-task-list { padding: 8px; }
 }

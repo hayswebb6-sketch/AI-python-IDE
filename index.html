@@ -16,11 +16,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=23">
+  <link rel="stylesheet" href="assets/styles.css?v=27">
 
   <!-- Monaco's AMD loader (classic script: must run before app.js) -->
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
-  <script type="module" src="assets/app.js?v=23"></script>
+  <script type="module" src="assets/app.js?v=27"></script>
 </head>
 <body>
 
@@ -62,7 +62,7 @@
         </span>
       </a>
 
-      <button class="btn ghost icon-only" id="btn-settings" title="Settings (Ctrl+,)" aria-label="Settings">
+      <button class="btn ghost icon-only" id="btn-settings" title="Settings (Ctrl+,)" aria-label="Settings" aria-haspopup="dialog" aria-controls="settings-dialog">
         <svg class="icon"><use href="#i-settings"/></svg>
       </button>
 
@@ -75,6 +75,9 @@
 
       <button class="btn ghost icon-only" id="btn-restart" title="Restart the Python runtime" aria-label="Restart runtime">
         <svg class="icon"><use href="#i-refresh"/></svg>
+      </button>
+      <button class="btn ghost icon-only" id="btn-batch-pc" title="Open the virtual Batch PC" aria-label="Open the virtual Batch PC" aria-haspopup="dialog" aria-controls="batch-pc-dialog">
+        <svg class="icon"><use href="#i-window"/></svg>
       </button>
 
       <div class="menu-wrap">
@@ -90,7 +93,7 @@
         </div>
         <div class="menu" id="run-menu" role="menu" hidden>
           <button role="menuitem" data-run="active"><span>Run active file</span><kbd>Ctrl ↵</kbd></button>
-          <button role="menuitem" data-run="input"><span>Run with input…</span><kbd>Ctrl ⇧ ↵</kbd></button>
+          <button role="menuitem" data-run="input"><span>Provide stdin manually…</span><kbd>Ctrl ⇧ ↵</kbd></button>
         </div>
       </div>
 
@@ -112,6 +115,7 @@
             </button>
             <div class="menu" id="new-menu" role="menu" hidden>
               <button role="menuitem" data-template="blank"><span>Blank file</span><kbd>py</kbd></button>
+              <button role="menuitem" data-template="batch"><span>Batch script</span><kbd>bat</kbd></button>
             </div>
           </div>
         </div>
@@ -125,7 +129,7 @@
           <button class="btn ghost small" id="btn-export" title="Download the active file">
             <svg class="icon"><use href="#i-download"/></svg> Export
           </button>
-          <input type="file" id="file-input" accept=".py,.txt,.md,.json,.csv,.html,.js,.css" multiple hidden>
+          <input type="file" id="file-input" accept=".py,.txt,.md,.json,.csv,.html,.htm,.js,.jsx,.ts,.tsx,.css,.scss,.less,.sql,.lua,.sh,.bash,.bat,.cmd,.ps1,.psm1,.yml,.yaml,.xml,.php,.rb,.cs,.go,.rs,.java,.cpp,.c,.h,.hpp,.cc,.cxx,.swift,.kt,.kts,.r,.dart,.pl,.scala,.sc,.jl,.fs,.fsx,.clj,.cljs,.m,.pas,.coffee,.dockerfile,.graphql,.gql,.proto,.tf,.tfvars,.ini,.toml,.cfg,.conf,.vb,.abap" multiple hidden>
         </div>
       </aside>
 
@@ -216,7 +220,7 @@
     </footer>
   </div>
 
-  <!-- ── Dialog (new file / rename / run with input) ───────────────── -->
+  <!-- ── Dialog (new file / rename / run with input) ────────��──────── -->
   <dialog class="dialog" id="dialog">
     <form method="dialog" class="dialog-form" id="dialog-form">
       <h2 class="dialog-title" id="dialog-title">Title</h2>
@@ -228,6 +232,252 @@
         <button class="btn ghost" value="cancel" id="dialog-cancel" type="button">Cancel</button>
         <button class="btn primary" value="ok" id="dialog-ok" type="submit">OK</button>
       </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog username-dialog" id="username-dialog" aria-labelledby="username-title" aria-describedby="username-description">
+    <form class="dialog-form" id="username-form" autocomplete="off">
+      <div>
+        <p class="settings-eyebrow">Personalize this session</p>
+        <h2 class="dialog-title" id="username-title">What username should your terminal use?</h2>
+        <p class="settings-description" id="username-description">This only labels the simulated shell in this browser tab. It is not sent to a server. Choose an alias rather than your real name.</p>
+      </div>
+      <label class="dialog-label" for="username-input">Terminal username</label>
+      <input class="dialog-input" id="username-input" name="terminalUsername" type="text" maxlength="32" pattern="[A-Za-z_][A-Za-z0-9._-]{0,31}" placeholder="guest" required autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-describedby="username-hint">
+      <p class="dialog-hint" id="username-hint">Start with a letter or underscore; use letters, numbers, dots, underscores, or hyphens.</p>
+      <div class="dialog-actions">
+        <button class="btn ghost" id="username-guest" type="button">Continue as guest</button>
+        <button class="btn primary" type="submit">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="batch-pc-dialog" id="batch-pc-dialog" aria-labelledby="batch-pc-title" aria-describedby="batch-pc-description">
+    <div class="batch-pc">
+      <header class="batch-pc-header">
+        <div class="batch-pc-brand">
+          <span class="batch-pc-mark" aria-hidden="true">PC</span>
+          <div>
+            <h2 id="batch-pc-title">Batch PC</h2>
+            <p id="batch-pc-description">A simulated desktop. Commands can only access this IDE&apos;s virtual workspace.</p>
+          </div>
+        </div>
+        <div class="batch-pc-header-actions">
+          <span class="batch-pc-sandbox">Browser sandbox</span>
+          <button class="icon-btn" id="batch-pc-close" type="button" aria-label="Close Batch PC" title="Close Batch PC">
+            <svg class="icon"><use href="#i-close"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="batch-pc-screen">
+        <nav class="batch-desktop-shortcuts" aria-label="Virtual desktop apps">
+          <button class="batch-desktop-shortcut" type="button" data-batch-app="cmd" aria-pressed="true">
+            <span class="batch-shortcut-glyph batch-glyph-cmd" aria-hidden="true">CMD</span><span>Command Prompt</span>
+          </button>
+          <button class="batch-desktop-shortcut" type="button" data-batch-app="files" aria-pressed="false">
+            <span class="batch-shortcut-glyph batch-glyph-files" aria-hidden="true">DIR</span><span>Files</span>
+          </button>
+          <button class="batch-desktop-shortcut" type="button" data-batch-app="notepad" aria-pressed="false">
+            <span class="batch-shortcut-glyph batch-glyph-notepad" aria-hidden="true">TXT</span><span>Notepad</span>
+          </button>
+          <button class="batch-desktop-shortcut" type="button" data-batch-app="calc" aria-pressed="false">
+            <span class="batch-shortcut-glyph batch-glyph-calc" aria-hidden="true">CALC</span><span>Calculator</span>
+          </button>
+          <button class="batch-desktop-shortcut" type="button" data-batch-app="tasks" aria-pressed="false">
+            <span class="batch-shortcut-glyph batch-glyph-tasks" aria-hidden="true">SYS</span><span>Task Manager</span>
+          </button>
+          <button class="batch-desktop-shortcut" type="button" data-batch-app="settings" aria-pressed="false">
+            <span class="batch-shortcut-glyph batch-glyph-settings" aria-hidden="true">CFG</span><span>About this PC</span>
+          </button>
+        </nav>
+
+        <section class="batch-pc-app-area" aria-label="Virtual PC workspace">
+          <div class="batch-pc-window">
+            <header class="batch-pc-windowbar">
+              <span id="batch-pc-window-title">Command Prompt</span>
+              <div class="batch-pc-header-actions">
+                <span class="batch-window-status"><span aria-hidden="true"></span> SIMULATED</span>
+                <button class="btn ghost small" type="button" id="batch-stop" disabled>Stop</button>
+              </div>
+            </header>
+
+            <section class="batch-app-view batch-cmd-view" data-batch-view="cmd" aria-label="Virtual command prompt">
+              <div class="batch-output" id="batch-output" role="log" aria-label="Batch command output" aria-live="polite" aria-relevant="additions text"></div>
+              <form class="batch-command-form" id="batch-command-form" autocomplete="off">
+                <label id="batch-prompt-label" for="batch-command-input">C:\workspace&gt;</label>
+                <input id="batch-command-input" name="command" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Virtual Batch command" placeholder="Type help or run hello.bat">
+                <button class="btn primary small" type="submit">Run</button>
+              </form>
+            </section>
+
+            <section class="batch-app-view batch-files-view" data-batch-view="files" aria-label="Virtual workspace files" hidden>
+              <div class="batch-app-heading">
+                <div><h3>Workspace files</h3><p>These are the files already open to this IDE, not your computer&apos;s disk.</p></div>
+                <button class="btn ghost small" type="button" id="batch-pc-create-script">New .bat</button>
+              </div>
+              <ul class="batch-file-list" id="batch-file-list" aria-label="Files in virtual workspace"></ul>
+            </section>
+
+            <section class="batch-app-view batch-notepad-view" data-batch-view="notepad" aria-label="Virtual Notepad" hidden>
+              <div class="batch-app-heading">
+                <div><h3>Notepad</h3><p id="batch-notepad-filename">Open a file in the IDE editor to edit it.</p></div>
+                <button class="btn primary small" type="button" id="batch-notepad-open">Open in editor</button>
+              </div>
+              <div class="batch-notepad-preview" id="batch-notepad-preview" aria-live="polite">Choose a file from Files, then open it in the IDE editor.</div>
+            </section>
+
+            <section class="batch-app-view batch-calc-view" data-batch-view="calc" aria-label="Virtual Calculator" hidden>
+              <div class="batch-calculator">
+                <div class="batch-app-heading"><div><h3>Calculator</h3><p>Basic arithmetic in the virtual PC.</p></div></div>
+                <output class="batch-calculator-display" id="batch-calc-display" aria-live="polite" aria-label="Calculator display">0</output>
+                <div class="batch-calculator-grid" role="group" aria-label="Calculator keys">
+                  <button type="button" data-calc-action="clear" aria-label="Clear">C</button>
+                  <button type="button" data-calc-action="backspace" aria-label="Backspace">⌫</button>
+                  <button type="button" data-calc-operation="divide" aria-label="Divide">÷</button>
+                  <button type="button" data-calc-operation="multiply" aria-label="Multiply">×</button>
+                  <button type="button" data-calc-digit="7">7</button>
+                  <button type="button" data-calc-digit="8">8</button>
+                  <button type="button" data-calc-digit="9">9</button>
+                  <button type="button" data-calc-operation="subtract" aria-label="Subtract">−</button>
+                  <button type="button" data-calc-digit="4">4</button>
+                  <button type="button" data-calc-digit="5">5</button>
+                  <button type="button" data-calc-digit="6">6</button>
+                  <button type="button" data-calc-operation="add" aria-label="Add">+</button>
+                  <button type="button" data-calc-digit="1">1</button>
+                  <button type="button" data-calc-digit="2">2</button>
+                  <button type="button" data-calc-digit="3">3</button>
+                  <button class="batch-calculator-equals" type="button" data-calc-action="equals" aria-label="Equals">=</button>
+                  <button class="batch-calculator-zero" type="button" data-calc-digit="0">0</button>
+                  <button type="button" data-calc-digit=".">.</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="batch-app-view batch-tasks-view" data-batch-view="tasks" aria-label="Virtual Task Manager" hidden>
+              <div class="batch-app-heading"><div><h3>Task Manager</h3><p>Only simulated apps in this virtual PC appear here.</p></div></div>
+              <ul class="batch-task-list" id="batch-task-list" aria-label="Virtual processes"></ul>
+            </section>
+
+            <section class="batch-app-view batch-about-view" data-batch-view="settings" aria-label="About this virtual PC" hidden>
+              <div class="batch-about-card">
+                <span class="batch-pc-mark" aria-hidden="true">PC</span>
+                <div><h3>PyIDE Virtual PC</h3><p>Batch scripts run in a bounded browser interpreter. No host shell, programs, accounts, network, or disk are accessed.</p></div>
+              </div>
+              <dl class="batch-system-details">
+                <div><dt>Workspace</dt><dd>IDE virtual files only</dd></div>
+                <div><dt>Session</dt><dd>Current browser tab</dd></div>
+                <div><dt>Command runtime</dt><dd>Batch simulator</dd></div>
+              </dl>
+            </section>
+          </div>
+        </section>
+      </div>
+
+      <footer class="batch-taskbar">
+        <button class="batch-start" id="batch-start" type="button" aria-expanded="false" aria-controls="batch-start-menu">Start</button>
+        <span class="batch-taskbar-active" id="batch-taskbar-active">Command Prompt</span>
+        <span class="batch-taskbar-note">Virtual files · no host access</span>
+        <nav class="batch-start-menu" id="batch-start-menu" aria-label="Batch PC apps" hidden>
+          <p class="batch-start-heading">Virtual apps</p>
+          <button type="button" data-batch-app="cmd">Command Prompt</button>
+          <button type="button" data-batch-app="files">Files</button>
+          <button type="button" data-batch-app="notepad">Notepad</button>
+          <button type="button" data-batch-app="calc">Calculator</button>
+          <button type="button" data-batch-app="tasks">Task Manager</button>
+          <button type="button" data-batch-app="settings">About this PC</button>
+        </nav>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog class="dialog settings-dialog" id="settings-dialog" aria-labelledby="settings-title" aria-describedby="settings-description">
+    <form class="dialog-form settings-form" id="settings-form" autocomplete="off">
+      <header class="settings-header">
+        <div>
+          <p class="settings-eyebrow">Preferences</p>
+          <h2 class="dialog-title" id="settings-title">Settings</h2>
+          <p class="settings-description" id="settings-description">Most preferences are saved in this browser; the terminal username lasts for this tab only.</p>
+        </div>
+        <button class="btn ghost small" id="settings-close" type="button">Close</button>
+      </header>
+
+      <div class="settings-grid">
+        <fieldset class="settings-group">
+          <legend>Appearance</legend>
+          <label class="settings-control">
+            <span class="settings-control-copy"><span class="settings-control-title">Color theme</span><span class="settings-control-hint">Choose a light or dark workspace</span></span>
+            <select data-setting="theme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>Editor</legend>
+          <label class="settings-control">
+            <span class="settings-control-copy"><span class="settings-control-title">Font size</span><span class="settings-control-hint">Code editor text size</span></span>
+            <input type="number" data-setting="fontSize" min="10" max="24" step="0.5" inputmode="decimal">
+          </label>
+          <label class="settings-control">
+            <span class="settings-control-copy"><span class="settings-control-title">Tab width</span><span class="settings-control-hint">Spaces inserted by Tab</span></span>
+            <select data-setting="tabSize">
+              <option value="2">2 spaces</option>
+              <option value="4">4 spaces</option>
+              <option value="8">8 spaces</option>
+            </select>
+          </label>
+          <label class="settings-control settings-toggle">
+            <span class="settings-control-copy"><span class="settings-control-title">Line numbers</span><span class="settings-control-hint">Show line markers</span></span>
+            <input type="checkbox" data-setting="lineNumbers">
+          </label>
+          <label class="settings-control settings-toggle">
+            <span class="settings-control-copy"><span class="settings-control-title">Word wrap</span><span class="settings-control-hint">Wrap long lines in the editor</span></span>
+            <input type="checkbox" data-setting="wordWrap">
+          </label>
+          <label class="settings-control settings-toggle">
+            <span class="settings-control-copy"><span class="settings-control-title">Minimap</span><span class="settings-control-hint">Show a code overview</span></span>
+            <input type="checkbox" data-setting="minimap">
+          </label>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>IntelliSense</legend>
+          <label class="settings-control settings-toggle">
+            <span class="settings-control-copy"><span class="settings-control-title">Quick suggestions</span><span class="settings-control-hint">Suggest names as you type</span></span>
+            <input type="checkbox" data-setting="quickSuggestions">
+          </label>
+          <label class="settings-control settings-toggle">
+            <span class="settings-control-copy"><span class="settings-control-title">Parameter hints</span><span class="settings-control-hint">Show call signatures while typing</span></span>
+            <input type="checkbox" data-setting="parameterHints">
+          </label>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>Terminal</legend>
+          <label class="settings-control">
+            <span class="settings-control-copy"><span class="settings-control-title">Terminal username</span><span class="settings-control-hint">Alias for this tab only; never sent to a server</span></span>
+            <input type="text" data-setting="username" maxlength="32" pattern="[A-Za-z_][A-Za-z0-9._-]{0,31}" required autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Terminal username">
+          </label>
+          <label class="settings-control">
+            <span class="settings-control-copy"><span class="settings-control-title">Font size</span><span class="settings-control-hint">Terminal text size</span></span>
+            <input type="number" data-setting="terminalFontSize" min="9" max="24" step="1" inputmode="numeric">
+          </label>
+          <label class="settings-control">
+            <span class="settings-control-copy"><span class="settings-control-title">Shell</span><span class="settings-control-hint">Command prompt style</span></span>
+            <select data-setting="shell">
+              <option value="bash">Bash</option>
+              <option value="pwsh">PowerShell</option>
+            </select>
+          </label>
+        </fieldset>
+      </div>
+
+      <footer class="settings-footer">
+        <button class="btn ghost" id="settings-reset" type="button">Reset defaults</button>
+        <button class="btn primary" type="submit">Done</button>
+      </footer>
     </form>
   </dialog>
 
