@@ -34,9 +34,13 @@ function loadPyodideScript() {
   throw lastError || new Error("importScripts failed");
 }
 const PROJECT_DIR = "/home/pyodide/project";
+const STDIN_CONTROL_BYTES = Int32Array.BYTES_PER_ELEMENT * 2;
 
 let py = null;
 let stdinQueue = [];
+let stdinControl = null;
+let stdinData = null;
+let stdinUnavailableReported = false;
 let running = false;
 
 const post = (message) => self.postMessage(message);
@@ -56,10 +60,33 @@ self.ideBridge = {
     post({ type: kind, payload });
   },
 
-  /** Returns the next queued stdin line, or null when the queue is exhausted. */
+  /** Uses piped input first, then blocks this worker until the terminal sends a line. */
   stdin() {
-    if (!stdinQueue.length) return null;
-    return String(stdinQueue.shift());
+    if (stdinQueue.length) return String(stdinQueue.shift());
+    if (!stdinControl || !stdinData) {
+      if (!stdinUnavailableReported) {
+        post({ type: "stdin-unavailable" });
+        stdinUnavailableReported = true;
+      }
+      return null;
+    }
+
+    Atomics.store(stdinControl, 0, 0);
+    Atomics.store(stdinControl, 1, 0);
+    post({ type: "stdin-request" });
+
+    try {
+      while (Atomics.load(stdinControl, 0) === 0) Atomics.wait(stdinControl, 0, 0);
+    } catch {
+      post({ type: "stdin-unavailable" });
+      return null;
+    }
+
+    if (Atomics.load(stdinControl, 0) !== 1) return null;
+    const length = Math.max(0, Math.min(Atomics.load(stdinControl, 1), stdinData.length));
+    const value = new TextDecoder().decode(stdinData.subarray(0, length));
+    Atomics.store(stdinControl, 0, 0);
+    return value;
   },
 };
 
@@ -87,7 +114,7 @@ function boot() {
 
       const line = (channel) => (text) => {
         const value = String(text);
-        post({ type: channel, text: value.endsWith("\n") ? value : `${value}\n` });
+        if (value) post({ type: channel, text: value });
       };
 
       if (typeof py.setStdout === "function") {
@@ -108,7 +135,7 @@ function boot() {
 
       post({ type: "status", state: "loading", message: "Installing browser shims…", progress: 0.8 });
 
-      const shimsUrl = new URL("shims.py", self.location.href);
+      const shimsUrl = new URL("shims.py?v=30", self.location.href);
       const response = await fetch(shimsUrl);
       if (!response.ok) throw new Error(`shims.py → HTTP ${response.status}`);
       await py.runPythonAsync(await response.text());
@@ -250,9 +277,24 @@ async function handleRun(message) {
     post({ type: "done", ok: false, ms: 0, files: {} });
     return;
   }
+  if (running) {
+    post({ type: "stderr", text: "Python is busy with another operation.\n" });
+    post({ type: "done", ok: false, ms: 0, files: {} });
+    return;
+  }
 
   running = true;
   stdinQueue = Array.isArray(message.stdin) ? message.stdin.map(String) : [];
+  stdinControl = null;
+  stdinData = null;
+  stdinUnavailableReported = false;
+  const inputBuffer = message.stdinBuffer;
+  if (typeof SharedArrayBuffer !== "undefined" && inputBuffer instanceof SharedArrayBuffer && inputBuffer.byteLength > STDIN_CONTROL_BYTES) {
+    stdinControl = new Int32Array(inputBuffer, 0, 2);
+    stdinData = new Uint8Array(inputBuffer, STDIN_CONTROL_BYTES);
+    Atomics.store(stdinControl, 0, 0);
+    Atomics.store(stdinControl, 1, 0);
+  }
   post({ type: "run-start", entry: message.entry });
 
   const started = performance.now();
@@ -287,6 +329,9 @@ async function handleRun(message) {
 
   const files = readWorkspace();
   running = false;
+  stdinQueue = [];
+  stdinControl = null;
+  stdinData = null;
   post({
     type: "done",
     ok,
@@ -310,9 +355,30 @@ async function handleTkEvent(message) {
 }
 
 async function handlePip(message) {
-  const packages = Array.isArray(message.packages) ? message.packages : [];
-  if (!packages.length) return;
+  const requestId = message.requestId;
+  const packages = Array.isArray(message.packages)
+    ? message.packages.map((packageSpec) => String(packageSpec).trim()).filter(Boolean)
+    : [];
+  const finish = (ok) => post({ type: "pip-done", requestId, ok });
 
+  if (!py) {
+    post({ type: "stderr", text: "Python is not ready yet.\n" });
+    finish(false);
+    return;
+  }
+  if (running) {
+    post({ type: "stderr", text: "Python is busy with another operation.\n" });
+    finish(false);
+    return;
+  }
+  if (!packages.length) {
+    post({ type: "stderr", text: "pip: specify at least one package.\n" });
+    finish(false);
+    return;
+  }
+
+  running = true;
+  let ok = false;
   post({ type: "stdout", text: `\nInstalling ${packages.join(", ")}…\n` });
   try {
     py.globals.set("__ide_pkgs", JSON.stringify(packages));
@@ -321,10 +387,13 @@ import json, micropip
 await micropip.install(json.loads(__ide_pkgs))
 `);
     post({ type: "stdout", text: "Package installation finished.\n" });
+    ok = true;
   } catch (error) {
     post({ type: "stderr", text: formatError(error) });
+  } finally {
+    running = false;
+    finish(ok);
   }
-  post({ type: "pip-done" });
 }
 
 /* -------------------------------------------------------------------------
