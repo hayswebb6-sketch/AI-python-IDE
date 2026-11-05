@@ -582,7 +582,6 @@ export const MODULES = {
   bisect: { doc: "Binary search on sorted lists.", members: [["bisect_left", "bisect.bisect_left(a, x)", "Insertion point on the left.", "function"], ["bisect_right", "bisect.bisect_right(a, x)", "Insertion point on the right.", "function"], ["insort", "bisect.insort(a, x)", "Insert while keeping order.", "function"]] },
   sqlite3: { doc: "SQLite database access (in-memory inside the browser).", members: [["connect", "sqlite3.connect(':memory:')", "Open a database.", "function"]] },
   micropip: { doc: "Install pure-Python wheels from PyPI into Pyodide.", members: [["install", "micropip.install('numpy')", "Install a package.", "function"]] },
-<<<<<<< HEAD:assets/completions.js
   decimal: { doc: "Decimal fixed-point arithmetic.", members: [["Decimal", "decimal.Decimal(value)", "Create a decimal number.", "class"], ["getcontext", "decimal.getcontext()", "Get the active arithmetic context.", "function"], ["localcontext", "decimal.localcontext(ctx=None)", "Temporarily use a decimal context.", "function"]] },
   fractions: { doc: "Rational numbers.", members: [["Fraction", "fractions.Fraction(numerator, denominator=1)", "Create a rational number.", "class"]] },
   argparse: { doc: "Command-line argument parsing.", members: [["ArgumentParser", "argparse.ArgumentParser(description=None)", "Create a command-line parser.", "class"], ["Namespace", "argparse.Namespace(**kwargs)", "Store parsed arguments.", "class"]] },
@@ -666,35 +665,14 @@ export const MODULES = {
     ],
   },
   requests: { doc: "HTTP client library (install separately in Pyodide if needed).", members: [["get", "requests.get(url, params=None)", "Send an HTTP GET request.", "function"], ["post", "requests.post(url, data=None, json=None)", "Send an HTTP POST request.", "function"], ["put", "requests.put(url, data=None)", "Send an HTTP PUT request.", "function"], ["delete", "requests.delete(url)", "Send an HTTP DELETE request.", "function"], ["Session", "requests.Session()", "Create a persistent session.", "class"], ["Response", "requests.Response", "HTTP response object.", "class"]] },
-=======
-  numpy: {
-    doc: "NumPy arrays and numerical computing. Pyodide loads it automatically when imported.",
-    members: [
-      ["array", "numpy.array(values)", "Create an array.", "function"],
-      ["arange", "numpy.arange(start, stop, step)", "Create a range of values.", "function"],
-      ["linspace", "numpy.linspace(start, stop, num=50)", "Create evenly spaced values.", "function"],
-      ["zeros", "numpy.zeros(shape)", "Create an array filled with zeros.", "function"],
-      ["ones", "numpy.ones(shape)", "Create an array filled with ones.", "function"],
-      ["mean", "numpy.mean(values)", "Calculate the arithmetic mean.", "function"],
-      ["sum", "numpy.sum(values)", "Sum array values.", "function"],
-      ["sqrt", "numpy.sqrt(values)", "Calculate square roots.", "function"],
-      ["pi", "numpy.pi", "The constant pi.", "value"],
-      ["random", "numpy.random", "Random number helpers.", "value"],
-    ],
-  },
-  pandas: {
-    doc: "DataFrame and Series tools for working with tabular data. Pyodide loads it automatically when imported.",
-    members: [
-      ["DataFrame", "pandas.DataFrame(data)", "Create a labeled, two-dimensional table.", "class"],
-      ["Series", "pandas.Series(data)", "Create a labeled one-dimensional sequence.", "class"],
-      ["read_csv", "pandas.read_csv(filepath_or_buffer)", "Read CSV data into a DataFrame.", "function"],
-      ["concat", "pandas.concat(objects)", "Combine pandas objects.", "function"],
-      ["merge", "pandas.merge(left, right, on=None)", "Join DataFrames.", "function"],
-      ["to_datetime", "pandas.to_datetime(arg)", "Convert values to datetimes.", "function"],
-      ["isna", "pandas.isna(obj)", "Detect missing values.", "function"],
-    ],
-  },
->>>>>>> 9047c023cd12d44ece97b74436013990d77f62a5:public/assets/completions.js
+  asyncio: { doc: "Asynchronous I/O, tasks, and synchronization.", members: [["run", "asyncio.run(coro)", "Run a coroutine as the main entry point.", "function"], ["sleep", "asyncio.sleep(delay)", "Pause a coroutine.", "function"], ["gather", "asyncio.gather(*aws)", "Run awaitables concurrently.", "function"], ["create_task", "asyncio.create_task(coro)", "Schedule a coroutine as a task.", "function"], ["wait", "asyncio.wait(aws)", "Wait for futures or tasks.", "function"], ["Event", "asyncio.Event()", "Async notification primitive.", "class"], ["Lock", "asyncio.Lock()", "Async mutual-exclusion lock.", "class"], ["Queue", "asyncio.Queue(maxsize=0)", "Async FIFO queue.", "class"]] },
+  base64: { doc: "Encode and decode Base16, Base32, and Base64 data.", members: [["b64encode", "base64.b64encode(data)", "Encode bytes using Base64.", "function"], ["b64decode", "base64.b64decode(data, validate=False)", "Decode Base64 data.", "function"], ["urlsafe_b64encode", "base64.urlsafe_b64encode(data)", "Encode bytes for use in URLs.", "function"], ["urlsafe_b64decode", "base64.urlsafe_b64decode(data)", "Decode URL-safe Base64 data.", "function"], ["b32encode", "base64.b32encode(data)", "Encode bytes using Base32.", "function"]] },
+  copy: { doc: "Shallow and deep copy operations.", members: [["copy", "copy.copy(object)", "Make a shallow copy.", "function"], ["deepcopy", "copy.deepcopy(object)", "Make a deep copy.", "function"]] },
+  hashlib: { doc: "Secure hashes and message digests.", members: [["sha256", "hashlib.sha256(data=b'')", "Create a SHA-256 hash object.", "function"], ["sha1", "hashlib.sha1(data=b'')", "Create a SHA-1 hash object.", "function"], ["md5", "hashlib.md5(data=b'')", "Create an MD5 hash object.", "function"], ["new", "hashlib.new(name, data=b'')", "Create a hash by algorithm name.", "function"], ["pbkdf2_hmac", "hashlib.pbkdf2_hmac(hash_name, password, salt, iterations)", "Derive a key from a password.", "function"]] },
+  io: { doc: "Tools for working with text and binary streams.", members: [["StringIO", "io.StringIO(initial_value='')", "In-memory text stream.", "class"], ["BytesIO", "io.BytesIO(initial_bytes=b'')", "In-memory binary stream.", "class"], ["TextIOWrapper", "io.TextIOWrapper(buffer)", "Text stream wrapper.", "class"], ["open", "io.open(file, mode='r')", "Open a file with the io API.", "function"]] },
+  pprint: { doc: "Pretty-print Python data structures.", members: [["pprint", "pprint.pprint(object, stream=None, width=80)", "Pretty-print an object.", "function"], ["pformat", "pprint.pformat(object, width=80)", "Return a formatted representation.", "function"], ["pp", "pprint.pp(object, width=80)", "Pretty-print an object.", "function"]] },
+  typing: { doc: "Type hints and typing-related helpers.", members: [["Any", "typing.Any", "Dynamically typed value.", "value"], ["Callable", "typing.Callable", "Callable type.", "value"], ["Iterable", "typing.Iterable", "Iterable type.", "value"], ["Iterator", "typing.Iterator", "Iterator type.", "value"], ["Mapping", "typing.Mapping", "Mapping type.", "value"], ["Optional", "typing.Optional[type]", "Optional value type.", "function"], ["Sequence", "typing.Sequence", "Sequence type.", "value"], ["TypeVar", "typing.TypeVar(name)", "Declare a type variable.", "function"], ["TypedDict", "typing.TypedDict(name, fields)", "Define a dictionary type with named fields.", "function"], ["Union", "typing.Union[type, ...]", "Union of types.", "function"], ["Protocol", "typing.Protocol", "Structural typing protocol.", "class"], ["Literal", "typing.Literal[value, ...]", "Constrain a value to literals.", "value"]] },
+  zipfile: { doc: "Read and write ZIP archive files.", members: [["ZipFile", "zipfile.ZipFile(file, mode='r')", "Read or write a ZIP archive.", "class"], ["is_zipfile", "zipfile.is_zipfile(filename)", "Check whether a file is a ZIP archive.", "function"], ["ZipInfo", "zipfile.ZipInfo(filename)", "Metadata for a member of an archive.", "class"], ["ZIP_DEFLATED", "zipfile.ZIP_DEFLATED", "Deflate compression method.", "value"], ["ZIP_STORED", "zipfile.ZIP_STORED", "No compression.", "value"]] },
 };
 
 export const SNIPPETS = [
@@ -771,7 +749,6 @@ function builtinEntry(name) {
   return BUILTINS.find((entry) => entry.label === name) || null;
 }
 
-<<<<<<< HEAD:assets/completions.js
 function moduleBindings(source) {
   const bindings = new Map();
   for (const match of source.matchAll(/^[ \t]*import[ \t]+([^\n#]+)/gm)) {
@@ -802,15 +779,6 @@ function resolveModuleName(receiver, source) {
   return MODULES[resolved] ? resolved : null;
 }
 
-export function lookupSymbol(dotted, source = "") {
-  const value = String(dotted);
-  const lastDot = value.lastIndexOf(".");
-  if (lastDot >= 0) {
-    const receiver = value.slice(0, lastDot);
-    const member = value.slice(lastDot + 1);
-    const moduleName = resolveModuleName(receiver, source);
-    const mod = moduleName && MODULES[moduleName];
-=======
 const PYTHON_RESERVED_NAMES = new Set([
   ...KEYWORDS.map(([name]) => name),
   ...BUILTINS.map(({ label }) => label),
@@ -986,11 +954,14 @@ export function collectPythonSymbols(source) {
   return [...symbols.values()];
 }
 
-export function lookupSymbol(dotted) {
-  const [head, member] = String(dotted).split(".");
-  if (member) {
-    const mod = MODULES[head];
->>>>>>> 9047c023cd12d44ece97b74436013990d77f62a5:public/assets/completions.js
+export function lookupSymbol(dotted, source = "") {
+  const value = String(dotted);
+  const lastDot = value.lastIndexOf(".");
+  if (lastDot >= 0) {
+    const receiver = value.slice(0, lastDot);
+    const member = value.slice(lastDot + 1);
+    const moduleName = resolveModuleName(receiver, source);
+    const mod = moduleName && MODULES[moduleName];
     if (mod) {
       const found = mod.members.find(([label]) => label === member);
       if (found) {
@@ -1006,7 +977,6 @@ export function lookupSymbol(dotted) {
 /** Infer ``receiver -> type`` from simple assignments in the buffer. */
 function inferVariables(source) {
   const types = new Map();
-<<<<<<< HEAD:assets/completions.js
   const bindings = moduleBindings(source);
   const resolveModule = (receiver) => {
     const [name, ...suffix] = receiver.split(".");
@@ -1014,22 +984,17 @@ function inferVariables(source) {
     const resolved = [root, ...suffix].join(".");
     return MODULES[resolved] ? resolved : null;
   };
-  const assignment = /^[ \t]*([A-Za-z_]\w*)\s*=\s*([^\n#]+)/gm;
-=======
   const assignment = /^[ \t]*([A-Za-z_]\w*)\s*(?::[^=\n]+)?\s*=\s*([^\n#]+)/gm;
->>>>>>> 9047c023cd12d44ece97b74436013990d77f62a5:public/assets/completions.js
   let match;
   while ((match = assignment.exec(source))) {
     const [, name, rhs] = match;
     const text = rhs.trim();
-<<<<<<< HEAD:assets/completions.js
     const constructor = /([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\.([A-Za-z_]\w*)\s*\(/.exec(text);
     const constructorModule = constructor && resolveModule(constructor[1]);
     if (/^(?:turtle\.)?(?:Turtle|RawTurtle)\s*\(/.test(text)
       || (constructorModule === "turtle" && ["Turtle", "RawTurtle"].includes(constructor[2]))) {
       types.set(name, "turtle");
-    }
-    else {
+    } else {
       const moduleName = constructorModule;
       const className = constructor?.[2];
       if (moduleName === "tkinter" || moduleName === "tkinter.ttk") {
@@ -1044,20 +1009,10 @@ function inferVariables(source) {
         types.set(name, "series");
       }
     }
-    if (/^\s*["']/.test(text)) types.set(name, "str");
-    else if (/^\s*\[/.test(text)) types.set(name, "list");
-    else if (/^\s*\{[^}]*:/.test(text)) types.set(name, "dict");
-    else if (/^\s*\{/.test(text)) types.set(name, "set");
-=======
-    if (/^(?:turtle\.)?(?:Turtle|RawTurtle)\s*\(/.test(text)) types.set(name, "turtle");
-    else if (/(?:tkinter|tk)\.(?:Tk|Toplevel)\s*\(/.test(text)) types.set(name, "tk");
-    else if (/(?:tkinter|tk)\.(?:Frame|Label|Button|Entry|Text|Canvas|Listbox|Scale|Checkbutton|Radiobutton)\s*\(/.test(text)) types.set(name, "tk");
-    else if (/pygame\.Surface\s*\(/.test(text)) types.set(name, "pygame");
-    else if (/^(?:[rubf]{0,2})["']/i.test(text)) types.set(name, "str");
+    if (/^(?:[rubf]{0,2})["']/i.test(text)) types.set(name, "str");
     else if (/^(?:list)\s*\(/.test(text) || /^\s*\[/.test(text)) types.set(name, "list");
     else if (/^(?:dict)\s*\(/.test(text) || /^\s*\{\s*\}/.test(text) || /^\s*\{[^}]*:/.test(text)) types.set(name, "dict");
     else if (/^(?:set)\s*\(/.test(text) || /^\s*\{/.test(text)) types.set(name, "set");
->>>>>>> 9047c023cd12d44ece97b74436013990d77f62a5:public/assets/completions.js
     else if (/^\s*\(/.test(text)) types.set(name, "list");
   }
   return types;

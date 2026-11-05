@@ -9,7 +9,7 @@
  *   - supervising the Python and JavaScript workers
  */
 
-import { registerPythonIntelliSense } from "./completions.js?v=32";
+import { registerPythonIntelliSense } from "./completions.js?v=33";
 import { createShell } from "./shell.js?v=32";
 
 const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
@@ -196,6 +196,7 @@ const dom = {
   emptyState: $("empty-state"),
 
   console: $("console"),
+  btnFullscreen: $("btn-fullscreen"),
   resizer: $("resizer"),
   terminal: $("terminal"),
   promptForm: $("prompt-form"),
@@ -470,6 +471,9 @@ const LANGUAGE_DOCS = {
   xml: "https://developer.mozilla.org/en-US/docs/Web/XML",
   php: "https://www.php.net/manual/en/",
   ruby: "https://docs.ruby-lang.org/en/",
+  elixir: "https://hexdocs.pm/elixir/",
+  haskell: "https://www.haskell.org/documentation/",
+  ocaml: "https://ocaml.org/docs/",
   toml: "https://toml.io/en/",
   c: "https://en.cppreference.com/w/c",
   cpp: "https://en.cppreference.com/w/cpp",
@@ -534,6 +538,9 @@ const LANGUAGE_DEFS = {
   toml: { label: "TOML", short: "toml", runnable: false },
   vb: { label: "Visual Basic", short: "vb", runnable: false },
   abap: { label: "ABAP", short: "abap", runnable: false },
+  elixir: { label: "Elixir", short: "ex", runnable: false },
+  haskell: { label: "Haskell", short: "hs", runnable: false },
+  ocaml: { label: "OCaml", short: "ml", runnable: false },
   batch: { label: "Batch", short: "bat", runnable: true },
   c: { label: "C", short: "c", runnable: false },
   cpp: { label: "C++", short: "cpp", runnable: false },
@@ -592,6 +599,11 @@ const EXTENSION_LANGUAGE = {
   ini: "ini", toml: "toml", cfg: "ini", conf: "ini",
   vb: "vb",
   abap: "abap",
+  ex: "elixir",
+  exs: "elixir",
+  hs: "haskell",
+  ml: "ocaml",
+  mli: "ocaml",
   bat: "batch",
   cmd: "batch",
   c: "c",
@@ -2419,7 +2431,8 @@ function fitCanvas() {
   const pad = 20;
   const availableWidth = Math.max(120, stage.clientWidth - pad);
   const availableHeight = Math.max(90, stage.clientHeight - pad);
-  const scale = Math.min(availableWidth / canvasSize.w, availableHeight / canvasSize.h, 1);
+  const maxScale = isConsoleFullscreen() ? Number.POSITIVE_INFINITY : 1;
+  const scale = Math.min(availableWidth / canvasSize.w, availableHeight / canvasSize.h, maxScale);
   const cssWidth = Math.max(120, Math.round(canvasSize.w * scale));
   const cssHeight = Math.max(90, Math.round(canvasSize.h * scale));
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -3653,6 +3666,7 @@ function mergeRunFiles(returned) {
 
 function showPanel(name) {
   state.panel = name;
+  syncFullscreenControl();
 
   for (const tab of document.querySelectorAll(".console-tab")) {
     const active = tab.dataset.panel === name;
@@ -3678,6 +3692,56 @@ function showPanel(name) {
   if (name === "canvas") requestAnimationFrame(fitCanvas);
   scheduleSave();
 }
+
+function isConsoleFullscreen() {
+  return document.fullscreenElement === dom.console || dom.console.classList.contains("is-fullscreen");
+}
+
+function syncFullscreenControl() {
+  const fullscreen = isConsoleFullscreen();
+  const label = fullscreen ? "Exit fullscreen" : "Enter fullscreen";
+  dom.btnFullscreen.hidden = state.panel === "terminal" && !fullscreen;
+  dom.btnFullscreen.title = fullscreen ? `${label} (Esc)` : label;
+  dom.btnFullscreen.setAttribute("aria-label", label);
+  dom.btnFullscreen.setAttribute("aria-pressed", String(fullscreen));
+  dom.btnFullscreen.querySelector("use")?.setAttribute("href", fullscreen ? "#i-compress" : "#i-expand");
+}
+
+async function toggleConsoleFullscreen() {
+  if (document.fullscreenElement === dom.console) {
+    try {
+      await document.exitFullscreen();
+    } catch {
+      dom.console.classList.remove("is-fullscreen");
+    }
+  } else if (dom.console.classList.contains("is-fullscreen")) {
+    dom.console.classList.remove("is-fullscreen");
+  } else if (typeof dom.console.requestFullscreen === "function") {
+    try {
+      await dom.console.requestFullscreen();
+    } catch {
+      dom.console.classList.add("is-fullscreen");
+    }
+  } else {
+    dom.console.classList.add("is-fullscreen");
+  }
+
+  syncFullscreenControl();
+  requestAnimationFrame(fitCanvas);
+}
+
+dom.btnFullscreen.addEventListener("click", toggleConsoleFullscreen);
+document.addEventListener("fullscreenchange", () => {
+  if (document.fullscreenElement !== dom.console) dom.console.classList.remove("is-fullscreen");
+  syncFullscreenControl();
+  requestAnimationFrame(fitCanvas);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || document.fullscreenElement || !dom.console.classList.contains("is-fullscreen")) return;
+  dom.console.classList.remove("is-fullscreen");
+  syncFullscreenControl();
+  requestAnimationFrame(fitCanvas);
+});
 
 function showConsole(panel = state.panel) {
   dom.app.classList.remove("console-hidden");
@@ -4670,6 +4734,34 @@ const LANGUAGE_COMPLETIONS = {
     snippets: [
       { label: "report", insertText: "REPORT ${1:z_report}.\n\nWRITE: / '${2:Hello}'.", detail: "report" },
       { label: "select", insertText: "SELECT ${1:*}\n  FROM ${2:table}\n  INTO TABLE @DATA(${3:result})\n  WHERE ${4:condition}.\nENDSELECT.", detail: "select" },
+    ],
+  },
+  elixir: {
+    keywords: ["alias","and","case","catch","cond","def","defdelegate","defguard","defmacro","defmodule","defp","defprotocol","defstruct","do","else","end","false","fn","for","if","import","in","is_nil","not","nil","or","raise","receive","require","rescue","with","true","try","unless","use","when","while"],
+    snippets: [
+      { label: "defmodule", insertText: "defmodule ${1:ModuleName} do\n  ${2}\nend", detail: "module" },
+      { label: "def", insertText: "def ${1:name}(${2}) do\n  ${3}\nend", detail: "public function" },
+      { label: "defp", insertText: "defp ${1:name}(${2}) do\n  ${3}\nend", detail: "private function" },
+      { label: "case", insertText: "case ${1:value} do\n  ${2:pattern} -> ${3:result}\nend", detail: "case expression" },
+      { label: "pipe", insertText: "${1:value}\n|> ${2:transform}()", detail: "pipe expression" },
+    ],
+  },
+  haskell: {
+    keywords: ["as","case","class","data","default","deriving","do","else","family","foreign","hiding","if","import","in","infix","infixl","infixr","instance","let","module","newtype","of","qualified","then","type","where","mdo","safe","unsafe","pure","return","map","foldr","foldl","filter","Just","Nothing","Left","Right","True","False"],
+    snippets: [
+      { label: "main", insertText: "main :: IO ()\nmain = do\n  ${1:putStrLn \"Hello, world!\"}", detail: "main action" },
+      { label: "function", insertText: "${1:name} :: ${2:Input} -> ${3:Output}\n${1:name} ${4:value} = ${5:result}", detail: "typed function" },
+      { label: "data", insertText: "data ${1:Name} = ${2:Constructor}\n  deriving (Show, Eq)", detail: "data type" },
+      { label: "case", insertText: "case ${1:value} of\n  ${2:pattern} -> ${3:result}", detail: "case expression" },
+    ],
+  },
+  ocaml: {
+    keywords: ["and","as","assert","begin","class","constraint","do","done","downto","else","end","exception","external","false","for","fun","function","functor","if","in","include","inherit","initializer","lazy","let","match","method","module","mutable","new","nonrec","object","of","open","private","rec","sig","struct","then","to","true","try","type","val","virtual","when","while","with","Some","None","Ok","Error","List","Array","String","Option","Result"],
+    snippets: [
+      { label: "let-fn", insertText: "let ${1:name} ${2:arg} =\n  ${3:result}", detail: "function binding" },
+      { label: "let-rec", insertText: "let rec ${1:name} ${2:arg} =\n  ${3:result}", detail: "recursive function" },
+      { label: "match", insertText: "match ${1:value} with\n| ${2:pattern} -> ${3:result}\n| _ -> ${4:default}", detail: "match expression" },
+      { label: "type", insertText: "type ${1:name} =\n  | ${2:Constructor}", detail: "variant type" },
     ],
   },
 };

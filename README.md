@@ -6,6 +6,7 @@ PyIDE is a browser-based Python IDE with local Pyodide execution and authenticat
 
 - Monaco editor, tabs, workspace files, and browser-side workspace persistence
 - Python execution in a Pyodide Web Worker, plus JavaScript, Lua, and SQL workers
+- Python IntelliSense for Tkinter, NumPy, pandas, Matplotlib, and standard-library modules
 - Authenticated email/password accounts with Better Auth and Neon Postgres
 - User-scoped Bash and PowerShell runner sessions
 - Workspace snapshot upload before each remote command and file sync back afterward
@@ -13,22 +14,7 @@ PyIDE is a browser-based Python IDE with local Pyodide execution and authenticat
 
 ## Render setup
 
-<<<<<<< HEAD
-- Monaco-style editor surface with tabs, breadcrumbs, status bar, and file management
-- Python IntelliSense for builtins, Tkinter, NumPy, pandas, Matplotlib, and standard-library modules
-- Python execution via Pyodide / WebAssembly
-- JavaScript execution in an isolated iframe sandbox
-- Shell-style terminal emulation with command history and prompt interactions
-- Canvas output for turtle / pygame-style drawing
-- Tk-inspired widget rendering in a Window panel
-- Fullscreen controls for turtle canvas and Tkinter previews
-- Workspace persistence in localStorage
-- Import / export of files
-- Theme settings and editor settings persistence
-- Language switching and documentation links
-=======
 The included `render.yaml` configures a Node web service with `npm ci`, `npm run build`, `npm start`, and `/api/health` as its health check. Its `sync: false` entries prompt for credentials in Render instead of storing values in the repository.
->>>>>>> 9047c023cd12d44ece97b74436013990d77f62a5
 
 Set these environment variables on the Render service:
 
