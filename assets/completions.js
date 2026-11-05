@@ -293,6 +293,61 @@ const pygameSurface = [
   ["convert", "surface.convert()", "No-op in the browser."],
 ];
 
+const numpyArrayMethods = [
+  ["astype", "array.astype(dtype)", "Return an array converted to another dtype."],
+  ["copy", "array.copy()", "Return a copy of the array."],
+  ["flatten", "array.flatten()", "Return a flattened copy."],
+  ["max", "array.max(axis=None)", "Return the maximum value."],
+  ["mean", "array.mean(axis=None)", "Return the arithmetic mean."],
+  ["min", "array.min(axis=None)", "Return the minimum value."],
+  ["reshape", "array.reshape(shape)", "Return the array with a new shape."],
+  ["ravel", "array.ravel()", "Return a flattened view when possible."],
+  ["round", "array.round(decimals=0)", "Round array values."],
+  ["shape", "array.shape", "Array dimensions.", "value"],
+  ["size", "array.size", "Number of array elements.", "value"],
+  ["sum", "array.sum(axis=None)", "Sum array elements."],
+  ["transpose", "array.transpose()", "Return the transposed array."],
+  ["T", "array.T", "Transposed array.", "value"],
+  ["dtype", "array.dtype", "Array element type.", "value"],
+];
+
+const pandasFrameMethods = [
+  ["head", "frame.head(n=5)", "Return the first rows."],
+  ["tail", "frame.tail(n=5)", "Return the last rows."],
+  ["describe", "frame.describe()", "Generate descriptive statistics."],
+  ["info", "frame.info()", "Print a concise summary."],
+  ["mean", "frame.mean(axis=0)", "Calculate the mean."],
+  ["sum", "frame.sum(axis=0)", "Calculate the sum."],
+  ["sort_values", "frame.sort_values(by, ascending=True)", "Sort by column values."],
+  ["groupby", "frame.groupby(by)", "Group rows by one or more columns."],
+  ["drop", "frame.drop(labels, axis=0)", "Drop specified labels."],
+  ["fillna", "frame.fillna(value=None)", "Fill missing values."],
+  ["isna", "frame.isna()", "Detect missing values."],
+  ["to_csv", "frame.to_csv(path_or_buf=None, index=True)", "Write the DataFrame to CSV."],
+  ["to_dict", "frame.to_dict(orient='dict')", "Convert the DataFrame to dictionaries."],
+  ["columns", "frame.columns", "Column labels.", "value"],
+  ["index", "frame.index", "Row labels.", "value"],
+  ["shape", "frame.shape", "DataFrame dimensions.", "value"],
+  ["loc", "frame.loc", "Select rows and columns by label.", "value"],
+  ["iloc", "frame.iloc", "Select rows and columns by position.", "value"],
+];
+
+const pandasSeriesMethods = [
+  ["head", "series.head(n=5)", "Return the first values."],
+  ["tail", "series.tail(n=5)", "Return the last values."],
+  ["mean", "series.mean()", "Calculate the mean."],
+  ["sum", "series.sum()", "Calculate the sum."],
+  ["value_counts", "series.value_counts()", "Count unique values."],
+  ["unique", "series.unique()", "Return unique values."],
+  ["sort_values", "series.sort_values()", "Sort by values."],
+  ["isna", "series.isna()", "Detect missing values."],
+  ["fillna", "series.fillna(value=None)", "Fill missing values."],
+  ["to_list", "series.to_list()", "Convert values to a list."],
+  ["index", "series.index", "Row labels.", "value"],
+  ["shape", "series.shape", "Series dimensions.", "value"],
+  ["dtype", "series.dtype", "Value type.", "value"],
+];
+
 /** Modules with their members. `stdlib` marks what Pyodide can import. */
 export const MODULES = {
   math: {
@@ -450,6 +505,7 @@ export const MODULES = {
     doc: "Tkinter widgets, rendered in the Window panel.",
     members: [
       ["Tk", "tkinter.Tk()", "Create the root window.", "class"],
+      ["Toplevel", "tkinter.Toplevel(master=None)", "Create an additional window.", "class"],
       ["Frame", "tkinter.Frame(master)", "Container widget.", "class"],
       ["Label", "tkinter.Label(master, text='')", "Text label.", "class"],
       ["Button", "tkinter.Button(master, text='', command=None)", "Button.", "class"],
@@ -463,8 +519,43 @@ export const MODULES = {
       ["StringVar", "tkinter.StringVar(value='')", "String variable.", "class"],
       ["IntVar", "tkinter.IntVar(value=0)", "Integer variable.", "class"],
       ["BooleanVar", "tkinter.BooleanVar(value=False)", "Boolean variable.", "class"],
+      ["DoubleVar", "tkinter.DoubleVar(value=0.0)", "Floating-point variable.", "class"],
+      ["END", "tkinter.END", "Index after the final character.", "value"],
+      ["BOTH", "tkinter.BOTH", "Fill both directions in pack().", "value"],
+      ["LEFT", "tkinter.LEFT", "Align to the left.", "value"],
+      ["RIGHT", "tkinter.RIGHT", "Align to the right.", "value"],
+      ["X", "tkinter.X", "Fill horizontally.", "value"],
+      ["Y", "tkinter.Y", "Fill vertically.", "value"],
       ["messagebox", "tkinter.messagebox.showinfo(title, message)", "Show a dialog in the terminal.", "value"],
     ].concat(tkMethods.map(([label, signature, doc]) => [label, signature, doc, "function"])),
+  },
+  "tkinter.ttk": {
+    doc: "Themed Tkinter widgets.",
+    members: [
+      ["Frame", "ttk.Frame(master)", "Themed container widget.", "class"],
+      ["Label", "ttk.Label(master, text='')", "Themed text label.", "class"],
+      ["Button", "ttk.Button(master, text='', command=None)", "Themed button.", "class"],
+      ["Entry", "ttk.Entry(master)", "Themed single-line input.", "class"],
+      ["Checkbutton", "ttk.Checkbutton(master, text='')", "Themed checkbox.", "class"],
+      ["Combobox", "ttk.Combobox(master, values=())", "Dropdown selection widget.", "class"],
+      ["Notebook", "ttk.Notebook(master)", "Tabbed container.", "class"],
+      ["Progressbar", "ttk.Progressbar(master, maximum=100)", "Progress indicator.", "class"],
+      ["Scale", "ttk.Scale(master, from_=0, to=100)", "Themed slider.", "class"],
+      ["Separator", "ttk.Separator(master)", "Visual divider.", "class"],
+      ["Treeview", "ttk.Treeview(master, columns=())", "Tabular tree widget.", "class"],
+      ["Style", "ttk.Style(master=None)", "Configure widget styles.", "class"],
+    ].concat(tkMethods.map(([label, signature, doc]) => [label, signature, doc, "function"])),
+  },
+  "tkinter.messagebox": {
+    doc: "Tkinter message dialogs.",
+    members: [
+      ["showinfo", "messagebox.showinfo(title, message)", "Show an information dialog.", "function"],
+      ["showwarning", "messagebox.showwarning(title, message)", "Show a warning dialog.", "function"],
+      ["showerror", "messagebox.showerror(title, message)", "Show an error dialog.", "function"],
+      ["askyesno", "messagebox.askyesno(title, message)", "Ask a yes-or-no question.", "function"],
+      ["askokcancel", "messagebox.askokcancel(title, message)", "Ask for confirmation.", "function"],
+      ["askretrycancel", "messagebox.askretrycancel(title, message)", "Ask whether to retry.", "function"],
+    ],
   },
   pygame: {
     doc: "A small pygame subset, rendered on the Canvas panel.",
@@ -491,6 +582,89 @@ export const MODULES = {
   bisect: { doc: "Binary search on sorted lists.", members: [["bisect_left", "bisect.bisect_left(a, x)", "Insertion point on the left.", "function"], ["bisect_right", "bisect.bisect_right(a, x)", "Insertion point on the right.", "function"], ["insort", "bisect.insort(a, x)", "Insert while keeping order.", "function"]] },
   sqlite3: { doc: "SQLite database access (in-memory inside the browser).", members: [["connect", "sqlite3.connect(':memory:')", "Open a database.", "function"]] },
   micropip: { doc: "Install pure-Python wheels from PyPI into Pyodide.", members: [["install", "micropip.install('numpy')", "Install a package.", "function"]] },
+  decimal: { doc: "Decimal fixed-point arithmetic.", members: [["Decimal", "decimal.Decimal(value)", "Create a decimal number.", "class"], ["getcontext", "decimal.getcontext()", "Get the active arithmetic context.", "function"], ["localcontext", "decimal.localcontext(ctx=None)", "Temporarily use a decimal context.", "function"]] },
+  fractions: { doc: "Rational numbers.", members: [["Fraction", "fractions.Fraction(numerator, denominator=1)", "Create a rational number.", "class"]] },
+  argparse: { doc: "Command-line argument parsing.", members: [["ArgumentParser", "argparse.ArgumentParser(description=None)", "Create a command-line parser.", "class"], ["Namespace", "argparse.Namespace(**kwargs)", "Store parsed arguments.", "class"]] },
+  logging: { doc: "Application logging.", members: [["debug", "logging.debug(msg, *args)", "Log a debug message.", "function"], ["info", "logging.info(msg, *args)", "Log an informational message.", "function"], ["warning", "logging.warning(msg, *args)", "Log a warning.", "function"], ["error", "logging.error(msg, *args)", "Log an error.", "function"], ["exception", "logging.exception(msg, *args)", "Log an exception with traceback.", "function"], ["basicConfig", "logging.basicConfig(level=None)", "Configure the root logger.", "function"], ["getLogger", "logging.getLogger(name=None)", "Get a named logger.", "function"], ["DEBUG", "logging.DEBUG", "Debug logging level.", "value"], ["INFO", "logging.INFO", "Informational logging level.", "value"], ["WARNING", "logging.WARNING", "Warning logging level.", "value"], ["ERROR", "logging.ERROR", "Error logging level.", "value"]] },
+  textwrap: { doc: "Wrap and format plain text.", members: [["wrap", "textwrap.wrap(text, width=70)", "Wrap text into lines.", "function"], ["fill", "textwrap.fill(text, width=70)", "Wrap text into one string.", "function"], ["dedent", "textwrap.dedent(text)", "Remove common leading whitespace.", "function"], ["indent", "textwrap.indent(text, prefix)", "Add a prefix to each line.", "function"]] },
+  urllib: { doc: "URL handling utilities.", members: [["parse", "urllib.parse", "URL parsing and quoting.", "module"], ["request", "urllib.request", "HTTP request helpers.", "module"]] },
+  "urllib.parse": { doc: "Parse, quote, and construct URLs.", members: [["urlparse", "urllib.parse.urlparse(url)", "Parse a URL.", "function"], ["urljoin", "urllib.parse.urljoin(base, url)", "Join a URL to a base.", "function"], ["urlencode", "urllib.parse.urlencode(query)", "Encode query parameters.", "function"], ["quote", "urllib.parse.quote(string)", "Percent-encode a string.", "function"], ["unquote", "urllib.parse.unquote(string)", "Decode percent-encoded text.", "function"], ["parse_qs", "urllib.parse.parse_qs(query)", "Parse a query string.", "function"]] },
+  numpy: {
+    doc: "Numerical arrays and mathematical operations (commonly imported as np).",
+    members: [
+      ["array", "numpy.array(object, dtype=None)", "Create an array.", "function"],
+      ["asarray", "numpy.asarray(object, dtype=None)", "Convert input to an array.", "function"],
+      ["arange", "numpy.arange(start, stop=None, step=1)", "Create evenly spaced values.", "function"],
+      ["linspace", "numpy.linspace(start, stop, num=50)", "Create evenly spaced samples.", "function"],
+      ["zeros", "numpy.zeros(shape)", "Create an array filled with zeros.", "function"],
+      ["ones", "numpy.ones(shape)", "Create an array filled with ones.", "function"],
+      ["empty", "numpy.empty(shape)", "Create an uninitialised array.", "function"],
+      ["full", "numpy.full(shape, fill_value)", "Create an array with a fill value.", "function"],
+      ["eye", "numpy.eye(N, M=None)", "Create a 2-D identity matrix.", "function"],
+      ["reshape", "numpy.reshape(a, newshape)", "Reshape an array.", "function"],
+      ["concatenate", "numpy.concatenate(arrays, axis=0)", "Join arrays along an axis.", "function"],
+      ["stack", "numpy.stack(arrays, axis=0)", "Join arrays along a new axis.", "function"],
+      ["where", "numpy.where(condition, x, y)", "Select values by condition.", "function"],
+      ["mean", "numpy.mean(a, axis=None)", "Compute the arithmetic mean.", "function"],
+      ["median", "numpy.median(a, axis=None)", "Compute the median.", "function"],
+      ["std", "numpy.std(a, axis=None)", "Compute the standard deviation.", "function"],
+      ["sum", "numpy.sum(a, axis=None)", "Sum array elements.", "function"],
+      ["min", "numpy.min(a, axis=None)", "Find the minimum.", "function"],
+      ["max", "numpy.max(a, axis=None)", "Find the maximum.", "function"],
+      ["abs", "numpy.abs(x)", "Element-wise absolute value.", "function"],
+      ["sqrt", "numpy.sqrt(x)", "Element-wise square root.", "function"],
+      ["sin", "numpy.sin(x)", "Element-wise sine.", "function"],
+      ["cos", "numpy.cos(x)", "Element-wise cosine.", "function"],
+      ["pi", "numpy.pi", "The mathematical constant pi.", "value"],
+      ["nan", "numpy.nan", "Not-a-Number value.", "value"],
+      ["newaxis", "numpy.newaxis", "Add a dimension to an array.", "value"],
+      ["ndarray", "numpy.ndarray(shape)", "N-dimensional array type.", "class"],
+      ["linalg", "numpy.linalg", "Linear algebra routines.", "module"],
+      ["random", "numpy.random", "Random number generation.", "module"],
+    ],
+  },
+  "numpy.linalg": { doc: "Linear algebra operations.", members: [["norm", "numpy.linalg.norm(x, ord=None)", "Compute a vector or matrix norm.", "function"], ["det", "numpy.linalg.det(a)", "Compute a matrix determinant.", "function"], ["inv", "numpy.linalg.inv(a)", "Compute a matrix inverse.", "function"], ["solve", "numpy.linalg.solve(a, b)", "Solve a linear system.", "function"], ["eig", "numpy.linalg.eig(a)", "Compute eigenvalues and eigenvectors.", "function"], ["svd", "numpy.linalg.svd(a)", "Compute a singular value decomposition.", "function"], ["matrix_rank", "numpy.linalg.matrix_rank(a)", "Compute the matrix rank.", "function"]] },
+  "numpy.random": { doc: "Random sampling tools from NumPy.", members: [["default_rng", "numpy.random.default_rng(seed=None)", "Create a random generator.", "function"], ["random", "numpy.random.random(size=None)", "Draw random floats.", "function"], ["rand", "numpy.random.rand(d0, d1)", "Draw samples from a uniform distribution.", "function"], ["randint", "numpy.random.randint(low, high=None, size=None)", "Draw random integers.", "function"], ["normal", "numpy.random.normal(loc=0.0, scale=1.0, size=None)", "Draw normal samples.", "function"], ["choice", "numpy.random.choice(a, size=None)", "Choose random samples.", "function"], ["seed", "numpy.random.seed(seed=None)", "Seed the random generator.", "function"]] },
+  pandas: {
+    doc: "Tabular data analysis (commonly imported as pd).",
+    members: [
+      ["DataFrame", "pandas.DataFrame(data=None, columns=None)", "Two-dimensional labeled data.", "class"],
+      ["Series", "pandas.Series(data=None, index=None)", "One-dimensional labeled data.", "class"],
+      ["read_csv", "pandas.read_csv(filepath_or_buffer)", "Read a CSV file into a DataFrame.", "function"],
+      ["read_json", "pandas.read_json(path_or_buf)", "Read JSON data.", "function"],
+      ["concat", "pandas.concat(objs, axis=0)", "Concatenate pandas objects.", "function"],
+      ["merge", "pandas.merge(left, right, on=None)", "Merge DataFrames.", "function"],
+      ["to_datetime", "pandas.to_datetime(arg)", "Convert values to datetimes.", "function"],
+      ["date_range", "pandas.date_range(start, end=None, periods=None)", "Create a date range.", "function"],
+      ["NaT", "pandas.NaT", "Missing datetime value.", "value"],
+      ["NA", "pandas.NA", "Missing value indicator.", "value"],
+    ],
+  },
+  matplotlib: { doc: "Plotting library.", members: [["pyplot", "matplotlib.pyplot", "State-based plotting interface.", "module"]] },
+  "matplotlib.pyplot": {
+    doc: "Matplotlib plotting functions (commonly imported as plt).",
+    members: [
+      ["plot", "pyplot.plot(x, y, label=None)", "Plot lines and/or markers.", "function"],
+      ["scatter", "pyplot.scatter(x, y)", "Make a scatter plot.", "function"],
+      ["bar", "pyplot.bar(x, height)", "Make a bar plot.", "function"],
+      ["barh", "pyplot.barh(y, width)", "Make a horizontal bar plot.", "function"],
+      ["hist", "pyplot.hist(x, bins=None)", "Plot a histogram.", "function"],
+      ["imshow", "pyplot.imshow(X)", "Display data as an image.", "function"],
+      ["xlabel", "pyplot.xlabel(xlabel)", "Set the x-axis label.", "function"],
+      ["ylabel", "pyplot.ylabel(ylabel)", "Set the y-axis label.", "function"],
+      ["title", "pyplot.title(label)", "Set the plot title.", "function"],
+      ["legend", "pyplot.legend()", "Show a legend.", "function"],
+      ["xlim", "pyplot.xlim(left=None, right=None)", "Get or set x-axis limits.", "function"],
+      ["ylim", "pyplot.ylim(bottom=None, top=None)", "Get or set y-axis limits.", "function"],
+      ["grid", "pyplot.grid(visible=True)", "Show or hide grid lines.", "function"],
+      ["subplots", "pyplot.subplots(nrows=1, ncols=1)", "Create a figure and axes.", "function"],
+      ["figure", "pyplot.figure(figsize=None)", "Create a figure.", "function"],
+      ["show", "pyplot.show()", "Display the figure.", "function"],
+      ["savefig", "pyplot.savefig(fname)", "Save the figure to a file.", "function"],
+      ["close", "pyplot.close(fig=None)", "Close a figure.", "function"],
+    ],
+  },
+  requests: { doc: "HTTP client library (install separately in Pyodide if needed).", members: [["get", "requests.get(url, params=None)", "Send an HTTP GET request.", "function"], ["post", "requests.post(url, data=None, json=None)", "Send an HTTP POST request.", "function"], ["put", "requests.put(url, data=None)", "Send an HTTP PUT request.", "function"], ["delete", "requests.delete(url)", "Send an HTTP DELETE request.", "function"], ["Session", "requests.Session()", "Create a persistent session.", "class"], ["Response", "requests.Response", "HTTP response object.", "class"]] },
 };
 
 export const SNIPPETS = [
@@ -558,16 +732,53 @@ const ARG_TYPE = {
   turtle: turtleMethods,
   tk: tkMethods,
   pygame: pygameSurface,
+  ndarray: numpyArrayMethods,
+  dataframe: pandasFrameMethods,
+  series: pandasSeriesMethods,
 };
 
 function builtinEntry(name) {
   return BUILTINS.find((entry) => entry.label === name) || null;
 }
 
-export function lookupSymbol(dotted) {
-  const [head, member] = String(dotted).split(".");
-  if (member) {
-    const mod = MODULES[head];
+function moduleBindings(source) {
+  const bindings = new Map();
+  for (const match of source.matchAll(/^[ \t]*import[ \t]+([^\n#]+)/gm)) {
+    for (const part of match[1].split(",")) {
+      const imported = /^\s*([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:\s+as\s+([A-Za-z_]\w*))?/.exec(part);
+      if (!imported) continue;
+      const [, moduleName, alias] = imported;
+      bindings.set(alias || moduleName.split(".")[0], alias ? moduleName : moduleName.split(".")[0]);
+    }
+  }
+  for (const match of source.matchAll(/^[ \t]*from[ \t]+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)[ \t]+import[ \t]+([^\n#]+)/gm)) {
+    const [, parent, names] = match;
+    for (const part of names.replace(/^\(|\)$/g, "").split(",")) {
+      const imported = /^\s*([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?/.exec(part);
+      if (!imported) continue;
+      const [, name, alias] = imported;
+      const submodule = `${parent}.${name}`;
+      if (MODULES[submodule]) bindings.set(alias || name, submodule);
+    }
+  }
+  return bindings;
+}
+
+function resolveModuleName(receiver, source) {
+  const [name, ...suffix] = receiver.split(".");
+  const root = moduleBindings(source).get(name) || name;
+  const resolved = [root, ...suffix].join(".");
+  return MODULES[resolved] ? resolved : null;
+}
+
+export function lookupSymbol(dotted, source = "") {
+  const value = String(dotted);
+  const lastDot = value.lastIndexOf(".");
+  if (lastDot >= 0) {
+    const receiver = value.slice(0, lastDot);
+    const member = value.slice(lastDot + 1);
+    const moduleName = resolveModuleName(receiver, source);
+    const mod = moduleName && MODULES[moduleName];
     if (mod) {
       const found = mod.members.find(([label]) => label === member);
       if (found) {
@@ -577,22 +788,46 @@ export function lookupSymbol(dotted) {
     }
     return null;
   }
-  return builtinEntry(head) || null;
+  return builtinEntry(value) || null;
 }
 
 /** Infer ``receiver -> type`` from simple assignments in the buffer. */
 function inferVariables(source) {
   const types = new Map();
+  const bindings = moduleBindings(source);
+  const resolveModule = (receiver) => {
+    const [name, ...suffix] = receiver.split(".");
+    const root = bindings.get(name) || name;
+    const resolved = [root, ...suffix].join(".");
+    return MODULES[resolved] ? resolved : null;
+  };
   const assignment = /^[ \t]*([A-Za-z_]\w*)\s*=\s*([^\n#]+)/gm;
   let match;
   while ((match = assignment.exec(source))) {
     const [, name, rhs] = match;
     const text = rhs.trim();
-    if (/^(?:turtle\.)?(?:Turtle|RawTurtle)\s*\(/.test(text)) types.set(name, "turtle");
-    else if (/(?:tkinter|tk)\.(?:Tk|Toplevel)\s*\(/.test(text)) types.set(name, "tk");
-    else if (/(?:tkinter|tk)\.(?:Frame|Label|Button|Entry|Text|Canvas|Listbox|Scale|Checkbutton|Radiobutton)\s*\(/.test(text)) types.set(name, "tk");
-    else if (/pygame\.Surface\s*\(/.test(text)) types.set(name, "pygame");
-    else if (/^\s*["']/.test(text)) types.set(name, "str");
+    const constructor = /([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\.([A-Za-z_]\w*)\s*\(/.exec(text);
+    const constructorModule = constructor && resolveModule(constructor[1]);
+    if (/^(?:turtle\.)?(?:Turtle|RawTurtle)\s*\(/.test(text)
+      || (constructorModule === "turtle" && ["Turtle", "RawTurtle"].includes(constructor[2]))) {
+      types.set(name, "turtle");
+    }
+    else {
+      const moduleName = constructorModule;
+      const className = constructor?.[2];
+      if (moduleName === "tkinter" || moduleName === "tkinter.ttk") {
+        types.set(name, "tk");
+      } else if (moduleName === "pygame" && className === "Surface") {
+        types.set(name, "pygame");
+      } else if (moduleName === "numpy" && ["array", "asarray", "arange", "linspace", "zeros", "ones", "empty", "full"].includes(className)) {
+        types.set(name, "ndarray");
+      } else if (moduleName === "pandas" && className === "DataFrame") {
+        types.set(name, "dataframe");
+      } else if (moduleName === "pandas" && className === "Series") {
+        types.set(name, "series");
+      }
+    }
+    if (/^\s*["']/.test(text)) types.set(name, "str");
     else if (/^\s*\[/.test(text)) types.set(name, "list");
     else if (/^\s*\{[^}]*:/.test(text)) types.set(name, "dict");
     else if (/^\s*\{/.test(text)) types.set(name, "set");
@@ -652,14 +887,25 @@ export function registerPythonIntelliSense(monaco) {
 
       const line = model.getLineContent(position.lineNumber);
       const before = line.slice(0, position.column - 1);
-      const memberMatch = /([A-Za-z_]\w*)\s*\.\s*[A-Za-z_]*$/.exec(before);
+      const source = model.getValue();
+      const fromImportMatch = /^[ \t]*from[ \t]+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)[ \t]+import[ \t]+[\w, ]*$/.exec(before);
+
+      if (fromImportMatch) {
+        const moduleName = resolveModuleName(fromImportMatch[1], source) || fromImportMatch[1];
+        if (MODULES[moduleName]) {
+          return { suggestions: memberSuggestions(monaco, range, MODULES[moduleName].members) };
+        }
+      }
+
+      const memberMatch = /([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\.\s*[A-Za-z_]*$/.exec(before);
 
       if (memberMatch) {
         const receiver = memberMatch[1];
-        if (MODULES[receiver]) {
-          return { suggestions: memberSuggestions(monaco, range, MODULES[receiver].members) };
+        const moduleName = resolveModuleName(receiver, source);
+        if (moduleName) {
+          return { suggestions: memberSuggestions(monaco, range, MODULES[moduleName].members) };
         }
-        const inferred = inferVariables(model.getValue()).get(receiver);
+        const inferred = inferVariables(source).get(receiver);
         if (inferred && ARG_TYPE[inferred]) {
           return { suggestions: memberSuggestions(monaco, range, ARG_TYPE[inferred]) };
         }
@@ -722,8 +968,8 @@ export function registerPythonIntelliSense(monaco) {
 
       const line = model.getLineContent(position.lineNumber);
       const before = line.slice(0, word.startColumn - 1);
-      const receiver = /([A-Za-z_]\w*)\s*\.\s*$/.exec(before)?.[1] || null;
-      const entry = lookupSymbol(receiver ? `${receiver}.${word.word}` : word.word);
+      const receiver = /([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\.\s*$/.exec(before)?.[1] || null;
+      const entry = lookupSymbol(receiver ? `${receiver}.${word.word}` : word.word, model.getValue());
       if (!entry) return null;
 
       return {
@@ -747,7 +993,7 @@ export function registerPythonIntelliSense(monaco) {
     provideSignatureHelp(model, position) {
       const context = signatureContext(model, position);
       if (!context) return null;
-      const entry = lookupSymbol(context.name);
+      const entry = lookupSymbol(context.name, model.getValue());
       if (!entry || !entry.signature) return null;
 
       const open = entry.signature.indexOf("(");

@@ -137,6 +137,10 @@ const dom = {
   promptSigil: $("prompt-sigil"),
 
   canvas: $("canvas"),
+  canvasPanel: $("panel-canvas"),
+  windowPanel: $("panel-window"),
+  fullscreenCanvas: $("btn-fullscreen-canvas"),
+  fullscreenWindow: $("btn-fullscreen-window"),
   tkStage: $("tk-stage"),
   tkEmpty: $("tk-empty"),
   htmlPreview: $("html-preview"),
@@ -636,7 +640,8 @@ function fitCanvas() {
   const pad = 20;
   const availableWidth = Math.max(120, stage.clientWidth - pad);
   const availableHeight = Math.max(90, stage.clientHeight - pad);
-  const scale = Math.min(availableWidth / canvasSize.w, availableHeight / canvasSize.h, 1);
+  const maxScale = document.fullscreenElement === dom.canvasPanel ? Infinity : 1;
+  const scale = Math.min(availableWidth / canvasSize.w, availableHeight / canvasSize.h, maxScale);
   const cssWidth = Math.max(120, Math.round(canvasSize.w * scale));
   const cssHeight = Math.max(90, Math.round(canvasSize.h * scale));
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -1558,6 +1563,49 @@ dom.resizer.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("resize", () => requestAnimationFrame(fitCanvas));
+
+function togglePreviewFullscreen(element) {
+  if (document.fullscreenElement === element) {
+    document.exitFullscreen().catch((error) => {
+      toast(`Could not exit fullscreen: ${error.message}`, "error");
+    });
+    return;
+  }
+  if (!element.requestFullscreen) {
+    toast("Fullscreen is not supported by this browser.", "error");
+    return;
+  }
+  element.requestFullscreen().catch((error) => {
+    toast(`Could not enter fullscreen: ${error.message}`, "error");
+  });
+}
+
+dom.fullscreenCanvas.addEventListener("click", () => {
+  togglePreviewFullscreen(dom.canvasPanel);
+});
+dom.fullscreenWindow.addEventListener("click", () => {
+  togglePreviewFullscreen(dom.windowPanel);
+});
+
+document.addEventListener("fullscreenchange", () => {
+  const canvasFullscreen = document.fullscreenElement === dom.canvasPanel;
+  const windowFullscreen = document.fullscreenElement === dom.windowPanel;
+  dom.fullscreenCanvas.textContent = canvasFullscreen ? "Exit fullscreen" : "Fullscreen";
+  dom.fullscreenCanvas.setAttribute("aria-label", canvasFullscreen
+    ? "Exit turtle canvas fullscreen"
+    : "Show turtle canvas fullscreen");
+  dom.fullscreenCanvas.title = canvasFullscreen
+    ? "Exit turtle canvas fullscreen"
+    : "Show turtle canvas fullscreen";
+  dom.fullscreenWindow.textContent = windowFullscreen ? "Exit fullscreen" : "Fullscreen";
+  dom.fullscreenWindow.setAttribute("aria-label", windowFullscreen
+    ? "Exit Tkinter window fullscreen"
+    : "Show Tkinter window fullscreen");
+  dom.fullscreenWindow.title = windowFullscreen
+    ? "Exit Tkinter window fullscreen"
+    : "Show Tkinter window fullscreen";
+  requestAnimationFrame(fitCanvas);
+});
 
 /* ==========================================================================
  * New / import / export

@@ -186,6 +186,10 @@
         </div>
 
         <div class="panel panel-canvas" id="panel-canvas" role="tabpanel" hidden>
+          <div class="preview-toolbar">
+            <button class="icon-btn preview-fullscreen" id="btn-fullscreen-canvas" type="button"
+                    title="Show turtle canvas fullscreen" aria-label="Show turtle canvas fullscreen">Fullscreen</button>
+          </div>
           <div class="canvas-stage">
             <canvas id="canvas" width="720" height="480" aria-label="Graphics output"></canvas>
           </div>
@@ -193,8 +197,12 @@
         </div>
 
         <div class="panel panel-window" id="panel-window" role="tabpanel" hidden>
+          <div class="preview-toolbar">
+            <button class="icon-btn preview-fullscreen" id="btn-fullscreen-window" type="button"
+                    title="Show Tkinter window fullscreen" aria-label="Show Tkinter window fullscreen">Fullscreen</button>
+          </div>
           <div class="tk-stage" id="tk-stage"></div>
-           <iframe id="html-preview" class="html-preview" sandbox="allow-scripts allow-modals" hidden></iframe>
+          <iframe id="html-preview" class="html-preview" sandbox="allow-scripts allow-modals" hidden></iframe>
           <div class="tk-empty" id="tk-empty">Run a <code>tkinter</code> script to see its window here.</div>
         </div>
       </div>

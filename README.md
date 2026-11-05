@@ -9,11 +9,13 @@ This is not a full server-backed IDE. There is no backend, no database, and no b
 ## What it does
 
 - Monaco-style editor surface with tabs, breadcrumbs, status bar, and file management
+- Python IntelliSense for builtins, Tkinter, NumPy, pandas, Matplotlib, and standard-library modules
 - Python execution via Pyodide / WebAssembly
 - JavaScript execution in an isolated iframe sandbox
 - Shell-style terminal emulation with command history and prompt interactions
 - Canvas output for turtle / pygame-style drawing
 - Tk-inspired widget rendering in a Window panel
+- Fullscreen controls for turtle canvas and Tkinter previews
 - Workspace persistence in localStorage
 - Import / export of files
 - Theme settings and editor settings persistence
