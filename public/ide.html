@@ -16,11 +16,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" crossorigin="anonymous">
-  <link rel="stylesheet" href="assets/styles.css?v=34">
+  <link rel="stylesheet" href="assets/styles.css?v=35">
 
   <!-- Monaco's AMD loader (classic script: must run before app.js) -->
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js" crossorigin="anonymous"></script>
-  <script type="module" src="assets/app.js?v=34"></script>
+  <script type="module" src="assets/app.js?v=37"></script>
 </head>
 <body>
 
@@ -70,6 +70,9 @@
       </button>
       <button class="btn ghost icon-only" id="btn-ai" title="Ask local AI" aria-label="Ask local AI" aria-haspopup="dialog" aria-controls="ai-dialog">
         <svg class="icon"><use href="#i-ai"/></svg>
+      </button>
+      <button class="btn ghost icon-only" id="btn-github" title="Push files to GitHub" aria-label="Push files to GitHub" aria-haspopup="dialog" aria-controls="github-dialog">
+        <svg class="icon"><use href="#i-upload"/></svg>
       </button>
 
       <div class="runtime" id="runtime" data-state="idle" role="status" aria-live="polite" title="Python runtime status">
@@ -268,6 +271,34 @@
         <button class="btn ghost" id="ai-dismiss" type="button">Close</button>
         <button class="btn ghost" id="ai-insert" type="button" disabled>Insert answer</button>
         <button class="btn primary" id="ai-submit" type="submit">Ask AI</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog class="dialog github-dialog" id="github-dialog" aria-labelledby="github-title" aria-describedby="github-description">
+    <form class="dialog-form github-form" id="github-form" autocomplete="off">
+      <header class="ai-header">
+        <div>
+          <p class="settings-eyebrow">Direct to GitHub</p>
+          <h2 class="dialog-title" id="github-title">Push workspace</h2>
+          <p class="settings-description" id="github-description">A fine-grained token with Contents read/write is required. The token stays in this tab and is sent only to api.github.com.</p>
+        </div>
+        <button class="icon-btn" id="github-close" type="button" title="Close GitHub dialog" aria-label="Close GitHub dialog">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </header>
+      <label class="dialog-label" for="github-repo">Repository</label>
+      <input class="dialog-input" id="github-repo" name="repository" placeholder="owner/repository" required autocomplete="off" spellcheck="false">
+      <label class="dialog-label" for="github-branch">Branch</label>
+      <input class="dialog-input" id="github-branch" name="branch" value="main" required autocomplete="off" spellcheck="false">
+      <label class="dialog-label" for="github-message">Commit message</label>
+      <input class="dialog-input" id="github-message" name="message" value="Update files from PyIDE" maxlength="120" required autocomplete="off">
+      <label class="dialog-label" for="github-token">Fine-grained token</label>
+      <input class="dialog-input" id="github-token" name="token" type="password" required autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <p class="dialog-hint github-status" id="github-status" role="status" aria-live="polite">Current workspace files are committed at the repository root. Remote files are not deleted.</p>
+      <footer class="ai-actions">
+        <button class="btn ghost" id="github-cancel" type="button">Cancel</button>
+        <button class="btn primary" id="github-submit" type="submit">Push workspace</button>
       </footer>
     </form>
   </dialog>

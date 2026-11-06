@@ -42,6 +42,7 @@ let stdinControl = null;
 let stdinData = null;
 let stdinUnavailableReported = false;
 let running = false;
+let replActive = false;
 
 const post = (message) => self.postMessage(message);
 
@@ -139,6 +140,8 @@ function boot() {
       const response = await fetch(shimsUrl);
       if (!response.ok) throw new Error(`shims.py → HTTP ${response.status}`);
       await py.runPythonAsync(await response.text());
+
+        py.runPython("import code; __ide_repl_console = code.InteractiveConsole(globals())");
 
       const version = py.runPython("import sys; sys.version.split()[0]");
       py.FS.mkdirTree(PROJECT_DIR);
@@ -251,13 +254,18 @@ function readWorkspace() {
  * ---------------------------------------------------------------------- */
 
 const RUNNER = `
-import os, runpy, sys
+import os, sys
 
-entry = __ide_entry
-os.chdir(os.path.dirname(entry) or ".")
-if os.getcwd() not in sys.path:
+def __ide_run_entry(entry):
+  os.chdir(os.path.dirname(entry) or ".")
+  if os.getcwd() not in sys.path:
     sys.path.insert(0, os.getcwd())
-runpy.run_path(entry, run_name="__main__")
+  with open(entry, encoding="utf-8") as source_file:
+    source = source_file.read()
+  globals()["__file__"] = entry
+  exec(compile(source, entry, "exec"), globals())
+
+__ide_run_entry(__ide_entry)
 `;
 
 function formatError(error) {
@@ -284,6 +292,7 @@ async function handleRun(message) {
   }
 
   running = true;
+  replActive = false;
   stdinQueue = Array.isArray(message.stdin) ? message.stdin.map(String) : [];
   stdinControl = null;
   stdinData = null;
@@ -338,6 +347,76 @@ async function handleRun(message) {
     ms: Math.round(performance.now() - started),
     files,
   });
+}
+
+function attachStdinBuffer(buffer) {
+  stdinControl = null;
+  stdinData = null;
+  if (typeof SharedArrayBuffer !== "undefined" && buffer instanceof SharedArrayBuffer && buffer.byteLength > STDIN_CONTROL_BYTES) {
+    stdinControl = new Int32Array(buffer, 0, 2);
+    stdinData = new Uint8Array(buffer, STDIN_CONTROL_BYTES);
+    Atomics.store(stdinControl, 0, 0);
+    Atomics.store(stdinControl, 1, 0);
+  }
+}
+
+function handleReplStart(message) {
+  if (!py) {
+    post({ type: "stderr", text: "Python is not ready yet.\\n" });
+    return;
+  }
+  stdinQueue = [];
+  stdinUnavailableReported = false;
+  attachStdinBuffer(message.stdinBuffer);
+  replActive = true;
+  post({ type: "repl-ready" });
+}
+
+async function handleReplEval(message) {
+  if (!py || !replActive) {
+    post({ type: "stderr", text: "Start the Python REPL before entering code.\\n" });
+    post({ type: "repl-result", complete: true, ok: false });
+    return;
+  }
+  if (running) {
+    post({ type: "stderr", text: "Python is busy with another operation.\\n" });
+    post({ type: "repl-result", complete: true, ok: false });
+    return;
+  }
+
+  running = true;
+  try {
+    const source = String(message.source ?? "");
+    try {
+      await py.loadPackagesFromImports(source, {
+        messageCallback: (text) => post({ type: "status", state: "loading", message: String(text) }),
+        errorCallback: () => {},
+      });
+    } catch {
+      /* Unknown imports are reported by Python evaluation. */
+    }
+    py.globals.set("__ide_repl_source", source);
+    const needsMore = py.runPython("__ide_repl_console.push(__ide_repl_source)");
+    post({ type: "repl-result", more: Boolean(needsMore), ok: true });
+  } catch (error) {
+    post({ type: "stderr", text: formatError(error) });
+    post({ type: "repl-result", complete: true, ok: false });
+  } finally {
+    running = false;
+  }
+}
+
+function handleReplEnd() {
+  if (running) return;
+  if (py) {
+    try { py.runPython("__ide_repl_console.resetbuffer()"); } catch { /* ignore */ }
+  }
+  replActive = false;
+  stdinQueue = [];
+  stdinControl = null;
+  stdinData = null;
+  stdinUnavailableReported = false;
+  post({ type: "repl-ended" });
 }
 
 async function handleTkEvent(message) {
@@ -405,6 +484,15 @@ self.addEventListener("message", (event) => {
   switch (message.type) {
     case "run":
       handleRun(message);
+      break;
+    case "repl-start":
+      handleReplStart(message);
+      break;
+    case "repl-eval":
+      handleReplEval(message);
+      break;
+    case "repl-end":
+      handleReplEnd();
       break;
     case "tk-event":
       handleTkEvent(message);

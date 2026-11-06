@@ -12,6 +12,7 @@
 import { registerPythonIntelliSense } from "./completions.js?v=33";
 import { createShell } from "./shell.js?v=32";
 import { askLocalAssistant } from "./ai-assistant.js?v=34";
+import { pushWorkspaceToGitHub } from "./github-sync.js?v=1";
 
 const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
 const workspaceScope = (new URLSearchParams(window.location.search).get("workspace") || "local")
@@ -20,7 +21,7 @@ const workspaceScope = (new URLSearchParams(window.location.search).get("workspa
 const storagePrefix = `pyide.${workspaceScope}`;
 const STORAGE_KEY = `${storagePrefix}.workspace.v2`;
 const SETTINGS_KEY = `${storagePrefix}.settings.v1`;
-const USERNAME_SESSION_KEY = `${storagePrefix}.shell.username.session`;
+const LEGACY_USERNAME_SESSION_KEY = `${storagePrefix}.shell.username.session`;
 const SHELL_HISTORY_KEY = `${storagePrefix}.shell.history.v1`;
 const SHELL_DIRS_KEY = `${storagePrefix}.shell.dirs.v1`;
 
@@ -81,24 +82,32 @@ function normalizeUsername(value) {
 }
 
 function loadSettings() {
+  let saved = null;
   try {
-    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null");
-    if (saved && typeof saved === "object") {
-      for (const key of Object.keys(DEFAULT_SETTINGS)) {
-        if (key !== "username" && saved[key] !== undefined) settings[key] = saved[key];
-      }
-    }
+    saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null");
   } catch {
     /* corrupted settings — fall back to defaults */
   }
-  try {
-    const sessionUsername = normalizeUsername(sessionStorage.getItem(USERNAME_SESSION_KEY));
-    settings.username = sessionUsername || DEFAULT_USERNAME;
-    shouldAskForUsername = !sessionUsername;
-  } catch {
-    settings.username = DEFAULT_USERNAME;
-    shouldAskForUsername = true;
+  if (saved && typeof saved === "object") {
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+      if (key !== "username" && saved[key] !== undefined) settings[key] = saved[key];
+    }
   }
+
+  const savedUsername = normalizeUsername(saved?.username);
+  let legacyUsername = "";
+  try {
+    legacyUsername = normalizeUsername(sessionStorage.getItem(LEGACY_USERNAME_SESSION_KEY));
+  } catch {
+    /* session storage may be unavailable */
+  }
+  settings.username = savedUsername || legacyUsername || DEFAULT_USERNAME;
+  shouldAskForUsername = !savedUsername && !legacyUsername;
+  if (!savedUsername && legacyUsername) {
+    saveSettings();
+    try { sessionStorage.removeItem(LEGACY_USERNAME_SESSION_KEY); } catch { /* ignore */ }
+  }
+
   settings.theme = settings.theme === "light" ? "light" : "dark";
   settings.shell = settings.shell === "pwsh" ? "pwsh" : "bash";
   settings.fontSize = Math.min(24, Math.max(10, Number(settings.fontSize) || DEFAULT_SETTINGS.fontSize));
@@ -108,24 +117,23 @@ function loadSettings() {
 
 function saveSettings() {
   try {
-    const persistentSettings = { ...settings };
-    delete persistentSettings.username;
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(persistentSettings));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch {
     /* ignore */
   }
 }
 
-function saveSessionUsername(value) {
+function saveUsername(value) {
   const username = normalizeUsername(value);
   if (!username) return false;
   settings.username = username;
   shouldAskForUsername = false;
   try {
-    sessionStorage.setItem(USERNAME_SESSION_KEY, username);
+    sessionStorage.removeItem(LEGACY_USERNAME_SESSION_KEY);
   } catch {
-    /* The username remains available for this page load. */
+    /* The username is also stored in persistent settings. */
   }
+  saveSettings();
   return true;
 }
 
@@ -313,6 +321,8 @@ const state = {
   batchCalc: { display: "0", accumulator: null, operator: null, waitingForOperand: false },
   running: false,
   pythonRunStarting: false,
+  pythonRepl: false,
+  pythonReplBuffer: "",
   stdinChannel: null,
   stdinPending: false,
   pendingRun: null,
@@ -1619,6 +1629,17 @@ function refreshPrompt() {
     return;
   }
 
+  if (state.pythonRepl) {
+    const busy = state.running || state.pipInstalling;
+    dom.promptPath.textContent = "";
+    dom.promptSigil.textContent = state.pythonReplBuffer ? "..." : ">>>";
+    dom.promptInput.placeholder = busy ? "Python is working…" : "Enter Python code";
+    dom.promptInput.title = "Enter a Python expression or statement";
+    dom.promptInput.setAttribute("aria-label", "Python REPL input");
+    dom.promptInput.disabled = busy;
+    return;
+  }
+
   const parts = shell.promptParts();
   if (dom.promptPath) dom.promptPath.textContent = parts.path;
   if (dom.promptSigil) dom.promptSigil.textContent = parts.sigil;
@@ -2018,9 +2039,45 @@ function insertCompletion(result) {
     return;
   }
 
+  if (state.pythonRepl) {
+    const pipCommand = /^(?:pip3?|python(?:3)?\s+-m\s+pip)\s+install(?:\s+|$)/i.exec(line.trim());
+    if (pipCommand && !state.pythonReplBuffer) {
+      writeTerminal(`>>> ${line}`, "cmd");
+      dom.promptInput.value = "";
+      const localCommand = line.trim().replace(/^(?:python(?:3)?\s+-m\s+)?pip3?/i, "pip");
+      await shell.execute(localCommand);
+      refreshPrompt();
+      dom.promptInput.focus({ preventScroll: true });
+      return;
+    }
+    dom.promptInput.value = "";
+    if (line.trim()) shell.addHistory(line);
+    void submitPythonReplLine(line);
+    return;
+  }
+
   dom.promptInput.value = "";
   if (!line.trim()) {
     refreshPrompt();
+    return;
+  }
+
+  if (/^(?:python|python3|py)\s*$/i.test(line.trim())) {
+    shell.addHistory(line);
+    historyIndex = shell.history.length;
+    writeTerminal(`${shell.promptText()} ${line}`, "cmd");
+    await startPythonRepl();
+    refreshPrompt();
+    return;
+  }
+
+  if (/^(?:pip3?|python(?:3)?\s+-m\s+pip)\s+install(?:\s+|$)/i.test(line.trim())) {
+    shell.addHistory(line);
+    historyIndex = shell.history.length;
+    await shell.execute(line.trim().replace(/^(?:python(?:3)?\s+-m\s+)?pip3?/i, "pip"));
+    refreshPrompt();
+    updateRunButtons();
+    scheduleSave();
     return;
   }
 
@@ -2061,6 +2118,12 @@ dom.promptInput.addEventListener("keydown", (event) => {
       event.preventDefault();
       clearTerminal();
     }
+    return;
+  }
+
+  if (state.pythonRepl && state.running && event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "c") {
+    event.preventDefault();
+    stopRuntime("Python REPL interrupted with Ctrl+C.");
     return;
   }
 
@@ -2192,7 +2255,7 @@ function settlePendingPip(ok, requestId) {
 function startWorker() {
   if (state.pendingPip) settlePendingPip(false, state.pendingPip.requestId);
   if (state.worker) state.worker.terminate();
-  state.worker = new Worker(new URL("assets/worker.js?v=30", document.baseURI));
+  state.worker = new Worker(new URL("assets/worker.js?v=31", document.baseURI));
 
   state.worker.addEventListener("message", onWorkerMessage);
   state.worker.addEventListener("error", (event) => {
@@ -2223,6 +2286,8 @@ function stopRuntime(reason = "Runtime stopped.", { restart = false } = {}) {
   const worker = state.worker;
   state.worker = null;
   worker?.terminate();
+  state.pythonRepl = false;
+  state.pythonReplBuffer = "";
   finishPendingPythonRun(false);
   if (state.pendingPip) settlePendingPip(false, state.pendingPip.requestId);
   else {
@@ -2371,6 +2436,14 @@ function onWorkerMessage({ data }) {
       dom.tkEmpty.hidden = false;
       break;
 
+    case "repl-result":
+      state.running = false;
+      if (!data.more) state.pythonReplBuffer = "";
+      setRuntime("ready", `Python ${state.pyVersion} ready`);
+      refreshPrompt();
+      dom.promptInput.focus({ preventScroll: true });
+      break;
+
     case "stdin-request":
       if (!state.stdinChannel) break;
       state.stdinPending = true;
@@ -2415,6 +2488,9 @@ function onWorkerMessage({ data }) {
       finishPendingPythonRun(Boolean(data.ok));
       setRuntime("ready", `Python ${state.pyVersion} ready`);
       finishRun(data);
+      if (activatePythonRepl({ announce: false })) {
+        writeTerminal("Python REPL ready. Type exit() to return to the shell.", "sys");
+      }
       break;
 
     default:
@@ -3509,6 +3585,69 @@ function focusTerminalInput() {
   dom.promptInput.focus({ preventScroll: true });
 }
 
+async function startPythonRepl() {
+  showConsole("terminal");
+  state.pythonRunStarting = true;
+  refreshPrompt();
+  try {
+    await ensureRuntime();
+    if (state.runtime !== "ready" || !state.worker) throw new Error("Python runtime is unavailable.");
+    activatePythonRepl();
+  } catch (error) {
+    writeTerminal(String(error?.message || error), "err");
+  } finally {
+    state.pythonRunStarting = false;
+    refreshPrompt();
+    dom.promptInput.focus({ preventScroll: true });
+  }
+}
+
+function activatePythonRepl({ announce = true } = {}) {
+  if (state.runtime !== "ready" || !state.worker) return false;
+  showConsole("terminal");
+  state.stdinChannel = createProgramStdinChannel();
+  state.stdinPending = false;
+  state.pythonReplBuffer = "";
+  state.pythonRepl = true;
+  state.worker.postMessage({
+    type: "repl-start",
+    stdinBuffer: state.stdinChannel?.buffer ?? null,
+  });
+  if (announce) writeTerminal(`Python ${state.pyVersion} (Pyodide) interactive console. Type exit() to leave.`, "sys");
+  refreshPrompt();
+  dom.promptInput.focus({ preventScroll: true });
+  return true;
+}
+
+async function submitPythonReplLine(line) {
+  if (!state.pythonRepl || state.running || !state.worker) return;
+  const prompt = state.pythonReplBuffer ? "..." : ">>>";
+  writeTerminal(`${prompt} ${line}`, "cmd");
+
+  if (!state.pythonReplBuffer && /^(?:exit|quit)(?:\(\))?\s*$/.test(line.trim())) {
+    exitPythonRepl();
+    return;
+  }
+
+  state.pythonReplBuffer += `${line}\n`;
+  state.running = true;
+  refreshPrompt();
+  setRuntime("running", "Python REPL running…");
+  state.worker.postMessage({ type: "repl-eval", source: line });
+}
+
+function exitPythonRepl({ quiet = false } = {}) {
+  if (!state.pythonRepl) return;
+  state.worker?.postMessage({ type: "repl-end" });
+  state.pythonRepl = false;
+  state.pythonReplBuffer = "";
+  state.stdinChannel = null;
+  state.stdinPending = false;
+  restoreTerminalPrompt();
+  if (!quiet) writeTerminal("Leaving Python REPL.", "sys");
+  refreshPrompt();
+}
+
 function normalizeProgramStdin(stdin) {
   if (Array.isArray(stdin)) return stdin.map(String);
   if (stdin === undefined || stdin === null || stdin === "") return [];
@@ -3533,6 +3672,8 @@ async function runFile(name, stdin, options = {}) {
     toast("A Python program is already running.");
     return false;
   }
+
+  if (state.pythonRepl) exitPythonRepl({ quiet: true });
 
   snapshotActive();
   showConsole("terminal");
@@ -3908,7 +4049,7 @@ dom.btnExport.addEventListener("click", () => {
  * ========================================================================== */
 
 function commitTerminalUsername(value) {
-  if (!saveSessionUsername(value)) return false;
+  if (!saveUsername(value)) return false;
   saveSettings();
   applySettings();
   dom.usernameDialog?.close();
@@ -3936,6 +4077,90 @@ dom.btnSettings?.addEventListener("click", () => {
   dom.settingsDialog?.showModal();
 });
 let latestAiAnswer = "";
+
+const githubDialog = $("github-dialog");
+const githubForm = $("github-form");
+const githubRepoInput = $("github-repo");
+const githubBranchInput = $("github-branch");
+const githubMessageInput = $("github-message");
+const githubTokenInput = $("github-token");
+const githubStatus = $("github-status");
+const githubSubmit = $("github-submit");
+let githubAbortController = null;
+
+function closeGithubDialog() {
+  githubAbortController?.abort();
+  githubAbortController = null;
+  githubTokenInput.value = "";
+  if (githubDialog.open) githubDialog.close();
+}
+
+$("btn-github")?.addEventListener("click", () => {
+  githubStatus.textContent = "Current workspace files are committed at the repository root. Remote files are not deleted.";
+  githubDialog.showModal();
+  githubRepoInput.focus();
+});
+$("github-close")?.addEventListener("click", closeGithubDialog);
+$("github-cancel")?.addEventListener("click", closeGithubDialog);
+githubDialog?.addEventListener("close", () => {
+  githubAbortController?.abort();
+  githubAbortController = null;
+  githubTokenInput.value = "";
+});
+githubForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const [owner, repository, ...extra] = githubRepoInput.value.trim().split("/");
+  const branch = githubBranchInput.value.trim();
+  const message = githubMessageInput.value.trim();
+  let token = githubTokenInput.value.trim();
+
+  if (!owner || !repository || extra.length || !/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repository)) {
+    githubStatus.textContent = "Enter a repository as owner/name.";
+    githubRepoInput.focus();
+    return;
+  }
+  if (!branch || !message || !token) return;
+
+  snapshotActive();
+  const files = [...state.files].map(([path, content]) => ({
+    path: String(path).replace(/\\/g, "/"),
+    content: String(content ?? ""),
+  }));
+  if (!files.length) {
+    githubStatus.textContent = "There are no workspace files to push.";
+    return;
+  }
+  if (files.some(({ path }) => path.startsWith("/") || path.split("/").some((part) => !part || part === "." || part === ".."))) {
+    githubStatus.textContent = "A workspace file has an invalid repository path.";
+    return;
+  }
+
+  githubAbortController = new AbortController();
+  githubSubmit.disabled = true;
+  githubStatus.textContent = `Preparing ${files.length} file${files.length === 1 ? "" : "s"}…`;
+
+  try {
+    const result = await pushWorkspaceToGitHub({
+      owner,
+      repository,
+      branch,
+      message,
+      token,
+      files,
+      signal: githubAbortController.signal,
+    });
+    githubStatus.textContent = `Pushed ${result.fileCount} file${result.fileCount === 1 ? "" : "s"} to ${owner}/${repository}:${branch}. ${result.url}`;
+    toast("Workspace pushed to GitHub.", "ok");
+  } catch (error) {
+    if (error?.name === "AbortError") githubStatus.textContent = "Push cancelled.";
+    else githubStatus.textContent = error?.message || "Could not push to GitHub.";
+  } finally {
+    token = "";
+    githubTokenInput.value = "";
+    githubSubmit.disabled = false;
+    githubAbortController = null;
+  }
+});
 
 function closeAiDialog() {
   dom.aiDialog.close();
@@ -4029,7 +4254,7 @@ dom.settingsForm?.addEventListener("change", (event) => {
       return;
     }
     field.setCustomValidity("");
-    saveSessionUsername(username);
+    saveUsername(username);
   } else if (field.type === "checkbox") settings[key] = field.checked;
   else if (field.type === "number") {
     const entered = Number(field.value);
@@ -4051,7 +4276,7 @@ dom.settingsForm?.addEventListener("submit", (event) => {
 $("settings-close")?.addEventListener("click", () => dom.settingsDialog?.close());
 $("settings-reset")?.addEventListener("click", () => {
   settings = { ...DEFAULT_SETTINGS };
-  saveSessionUsername(DEFAULT_USERNAME);
+  saveUsername(DEFAULT_USERNAME);
   saveSettings();
   applySettings();
   syncSettingsForm();
@@ -4927,9 +5152,21 @@ function boot() {
   }
 }
 
-window.addEventListener("beforeunload", () => {
+function flushPersistence() {
+  clearTimeout(saveTimer);
   snapshotActive();
   saveWorkspace();
+  try {
+    localStorage.setItem(SHELL_DIRS_KEY, JSON.stringify([...state.dirs]));
+  } catch {
+    /* storage is optional */
+  }
+}
+
+window.addEventListener("pagehide", flushPersistence);
+window.addEventListener("beforeunload", flushPersistence);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushPersistence();
 });
 
   const signOutButton = $("btn-sign-out");

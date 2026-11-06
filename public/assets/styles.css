@@ -261,6 +261,10 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover { background: #94a3b8;
 .ai-status { min-height: 1.5em; overflow-wrap: anywhere; }
 .ai-answer { max-height: min(42dvh, 360px); overflow: auto; margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; font: 400 12px/1.6 var(--mono); }
 .ai-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+.github-dialog { width: min(560px, 94vw); max-height: 92dvh; }
+.github-form { max-height: 92dvh; overflow-y: auto; }
+.github-form > .dialog-input { width: 100%; min-width: 0; }
+.github-status { min-height: 1.5em; overflow-wrap: anywhere; }
 
 .toasts { position: fixed; bottom: 40px; right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 100; }
 .toast { padding: 10px 14px; border-radius: var(--radius-sm); background: var(--panel-2); border: 1px solid var(--border-strong); font-size: 13px; box-shadow: var(--shadow-lg); }
@@ -451,6 +455,7 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb:hover { background: #94a3b8;
   .settings-form { max-height: 90dvh; padding: 16px; }
   .settings-grid { grid-template-columns: 1fr; }
   .ai-form { padding: 16px; }
+  .github-form { padding: 16px; }
   .settings-control select,
   .settings-control input[type="number"] { width: 108px; }
 }
