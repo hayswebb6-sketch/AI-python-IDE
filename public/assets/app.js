@@ -11,6 +11,7 @@
 
 import { registerPythonIntelliSense } from "./completions.js?v=33";
 import { createShell } from "./shell.js?v=32";
+import { askLocalAssistant } from "./ai-assistant.js?v=34";
 
 const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
 const workspaceScope = (new URLSearchParams(window.location.search).get("workspace") || "local")
@@ -216,6 +217,17 @@ const dom = {
   btnStop: $("btn-stop"),
   btnRestart: $("btn-restart"),
   btnSettings: $("btn-settings"),
+  btnAi: $("btn-ai"),
+  aiDialog: $("ai-dialog"),
+  aiForm: $("ai-form"),
+  aiPrompt: $("ai-prompt"),
+  aiIncludeCode: $("ai-include-code"),
+  aiStatus: $("ai-status"),
+  aiAnswer: $("ai-answer"),
+  aiSubmit: $("ai-submit"),
+  aiInsert: $("ai-insert"),
+  aiClose: $("ai-close"),
+  aiDismiss: $("ai-dismiss"),
   btnBatchPc: $("btn-batch-pc"),
   batchPcDialog: $("batch-pc-dialog"),
   batchPcClose: $("batch-pc-close"),
@@ -3922,6 +3934,84 @@ dom.btnRun.addEventListener("click", runActive);
 dom.btnSettings?.addEventListener("click", () => {
   syncSettingsForm();
   dom.settingsDialog?.showModal();
+});
+let latestAiAnswer = "";
+
+function closeAiDialog() {
+  dom.aiDialog.close();
+}
+
+function insertAiAnswer() {
+  if (!latestAiAnswer || !state.active || !state.editor) {
+    toast("Open a file before inserting the answer.", "error");
+    return;
+  }
+
+  if (state.editor.fallback) {
+    const area = dom.editor.querySelector(".editor-fallback");
+    if (!area) return;
+    area.setRangeText(latestAiAnswer, area.selectionStart, area.selectionEnd, "end");
+    state.files.set(state.active, area.value);
+    renderTabs();
+    renderFileList();
+    scheduleSave();
+    area.focus();
+  } else {
+    const position = state.editor.getPosition();
+    const selection = state.editor.getSelection();
+    const range = selection || {
+      startLineNumber: position.lineNumber,
+      startColumn: position.column,
+      endLineNumber: position.lineNumber,
+      endColumn: position.column,
+    };
+    state.editor.executeEdits("local-ai", [{ range, text: latestAiAnswer, forceMoveMarkers: true }]);
+    state.editor.focus();
+  }
+  dom.aiDialog.close();
+}
+
+dom.btnAi?.addEventListener("click", () => {
+  dom.aiDialog.showModal();
+  dom.aiPrompt.focus();
+});
+dom.aiClose?.addEventListener("click", closeAiDialog);
+dom.aiDismiss?.addEventListener("click", closeAiDialog);
+dom.aiInsert?.addEventListener("click", insertAiAnswer);
+dom.aiForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const prompt = dom.aiPrompt.value.trim();
+  if (!prompt) return;
+
+  if (dom.aiIncludeCode.checked) snapshotActive();
+  const filename = dom.aiIncludeCode.checked ? state.active || "" : "";
+  const code = filename ? state.files.get(filename) || "" : "";
+  latestAiAnswer = "";
+  dom.aiAnswer.hidden = true;
+  dom.aiAnswer.textContent = "";
+  dom.aiInsert.disabled = true;
+  dom.aiSubmit.disabled = true;
+  dom.aiSubmit.textContent = "Working…";
+  dom.aiStatus.textContent = "Loading the local model…";
+
+  try {
+    latestAiAnswer = await askLocalAssistant({
+      prompt,
+      code,
+      language: filename ? languageFor(filename) : "text",
+      filename,
+      onProgress: (message) => { dom.aiStatus.textContent = message; },
+    });
+    dom.aiAnswer.textContent = latestAiAnswer;
+    dom.aiAnswer.hidden = false;
+    dom.aiInsert.disabled = false;
+    dom.aiStatus.textContent = "Answer ready. Review it before inserting.";
+  } catch (error) {
+    dom.aiStatus.textContent = error instanceof Error ? error.message : "The local model could not start.";
+  } finally {
+    dom.aiSubmit.disabled = false;
+    dom.aiSubmit.textContent = "Ask AI";
+  }
 });
 dom.settingsForm?.addEventListener("input", (event) => {
   const field = event.target.closest('[data-setting="username"]');

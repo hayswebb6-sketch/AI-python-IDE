@@ -1,8 +1,9 @@
-const APP_VERSION = 'v33'
+const APP_VERSION = 'v34'
 const CACHE_NAME = `pyide-${APP_VERSION}`
 const PRECACHE = [
   '/ide.html',
   '/assets/app.js',
+  '/assets/ai-assistant.js',
   '/assets/styles.css',
   '/assets/shell.js',
   '/assets/completions.js',
