@@ -2458,7 +2458,7 @@ function onWorkerMessage({ data }) {
       state.stdinPending = false;
       restoreTerminalPrompt();
       refreshPrompt();
-      writeTerminal("Live program input requires a cross-origin-isolated page. Deploy with the configured COOP/COEP headers, or provide input through a shell pipe.\n", "err");
+      writeTerminal("Live input needs these response headers on the static site: Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp.\n", "err");
       break;
 
     case "canvas":

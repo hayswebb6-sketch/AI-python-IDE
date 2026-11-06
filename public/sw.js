@@ -1,4 +1,4 @@
-const APP_VERSION = 'v37'
+const APP_VERSION = 'v38'
 const CACHE_NAME = `pyide-${APP_VERSION}`
 const PRECACHE = [
   '/ide.html',
